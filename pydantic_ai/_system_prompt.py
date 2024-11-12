@@ -3,31 +3,30 @@ from __future__ import annotations as _annotations
 import inspect
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, cast
+from typing import Callable, Generic, cast
 
 from . import _utils
-from .dependencies import AgentDeps, CallContext, SystemPromptFunc
+from .call_context import call_context
+from .dependencies import AgentDeps, CallContext
 
 
 @dataclass
 class SystemPromptRunner(Generic[AgentDeps]):
-    function: SystemPromptFunc[AgentDeps]
-    _takes_ctx: bool = field(init=False)
+    function: Callable[[], str | Awaitable[str]]
     _is_async: bool = field(init=False)
 
     def __post_init__(self):
-        self._takes_ctx = len(inspect.signature(self.function).parameters) > 0
         self._is_async = inspect.iscoroutinefunction(self.function)
 
     async def run(self, deps: AgentDeps) -> str:
-        if self._takes_ctx:
-            args = (CallContext(deps, 0, None),)
-        else:
-            args = ()
-
-        if self._is_async:
-            function = cast(Callable[[Any], Awaitable[str]], self.function)
-            return await function(*args)
-        else:
-            function = cast(Callable[[Any], str], self.function)
-            return await _utils.run_in_executor(function, *args)
+        # TODO: Need to set the agent call context appropriately when running retries, etc.; not sure where that happens
+        with call_context(CallContext(deps, 0, None)):
+            # Thanks to dependency injection, we can assume self.function accepts zero arguments
+            # If that's wrong, the user will get a pydantic error; we should eventually the error messages
+            # though.
+            if self._is_async:
+                function = cast(Callable[[], Awaitable[str]], self.function)
+                return await function()
+            else:
+                function = cast(Callable[[], str], self.function)
+                return await _utils.run_in_executor(function)

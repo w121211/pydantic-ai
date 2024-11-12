@@ -1,19 +1,46 @@
 from __future__ import annotations as _annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+import inspect
+from collections.abc import AsyncIterator, Awaitable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, Literal, cast, final, overload
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Concatenate,
+    Generic,
+    Literal,
+    ParamSpec,
+    TypeVar,
+    cast,
+    final,
+    get_args,
+    get_origin,
+    overload,
+)
 
 import logfire_api
 from typing_extensions import assert_never
 
-from . import _result, _retriever as _r, _system_prompt, _utils, exceptions, messages as _messages, models, result
-from .dependencies import AgentDeps, RetrieverContextFunc, RetrieverParams, RetrieverPlainFunc
+from . import (
+    _result,
+    _retriever as _r,
+    _system_prompt,
+    _utils,
+    exceptions,
+    messages as _messages,
+    models,
+    result,
+)
+from ._depends import Depends, DependsType, inject
+from .call_context import get_call_context
+from .dependencies import AgentDeps, CallContext, RetrieverContextFunc, RetrieverParams, RetrieverPlainFunc
 from .result import ResultData
 
 __all__ = 'Agent', 'KnownModelName'
+
 
 KnownModelName = Literal[
     'openai:gpt-4o',
@@ -30,6 +57,9 @@ KnownModelName = Literal[
 """
 
 _logfire = logfire_api.Logfire(otel_scope='pydantic-ai')
+SystemPromptReturnT = TypeVar('SystemPromptReturnT', bound=str | Awaitable[str])
+T = TypeVar('T')
+P = ParamSpec('P')
 
 
 @final
@@ -272,19 +302,64 @@ class Agent(Generic[AgentDeps, ResultData]):
                                 # the model_response should have been fully streamed by now, we can add it's cost
                                 cost += model_response.cost()
 
-    def system_prompt(
-        self, func: _system_prompt.SystemPromptFunc[AgentDeps]
-    ) -> _system_prompt.SystemPromptFunc[AgentDeps]:
-        """Decorator to register a system prompt function that takes `CallContext` as it's only argument."""
-        self._system_prompt_functions.append(_system_prompt.SystemPromptRunner(func))
+    def system_prompt(self, func: Callable[P, SystemPromptReturnT]) -> Callable[P, SystemPromptReturnT]:
+        """Decorator to register a system prompt function that takes any number of dependency-injected arguments."""
+        # TODO: Do runtime validation that all arguments are injected and, if present, the CallContext type matches
+        #  Note: this may require changes to how dependency_injection works
+        func = inject_for_agent(func)
+        validated_func = cast(Callable[[], SystemPromptReturnT], func)  # note: no validation has been done yet
+        self._system_prompt_functions.append(_system_prompt.SystemPromptRunner[AgentDeps](validated_func))
         return func
 
+    def system_prompt_checked(
+        self, func: Callable[Concatenate[CallContext[AgentDeps], P], SystemPromptReturnT]
+    ) -> Callable[Concatenate[CallContext[AgentDeps], P], SystemPromptReturnT]:
+        """Decorator to register a system prompt function that takes `CallContext` as its first argument.
+
+        The function may also accept any number of dependency-injected arguments. The upshot of this API is the ability
+        to type-check agreement of the AgentDeps parameter between the agent and the system prompt function.
+        """
+        return self.system_prompt(func)
+
+    # Note: we need to use overloads here rather than the typevar bound trick used for system_prompt because we would
+    # need to reference the ResultData parameter in the bound of the typevar, and Python's generics don't support this.
+    @overload
+    def result_validator(self, func: Callable[P, ResultData]) -> Callable[P, ResultData]: ...
+
+    @overload
+    def result_validator(self, func: Callable[P, Awaitable[ResultData]]) -> Callable[P, Awaitable[ResultData]]: ...
+
+    @overload
     def result_validator(
-        self, func: _result.ResultValidatorFunc[AgentDeps, ResultData]
-    ) -> _result.ResultValidatorFunc[AgentDeps, ResultData]:
+        self, func: Callable[P, ResultData | Awaitable[ResultData]]
+    ) -> Callable[P, ResultData | Awaitable[ResultData]]: ...
+
+    def result_validator(
+        self, func: Callable[P, ResultData | Awaitable[ResultData]]
+    ) -> Callable[P, ResultData | Awaitable[ResultData]]:
         """Decorator to register a result validator function."""
-        self._result_validators.append(_result.ResultValidator(func))
+        # TODO: Do runtime validation that all arguments except one are injected and,
+        #  if present, the CallContext type matches.
+        #  Note: this may require changes to how dependency_injection works
+        validated_func = cast(Callable[[ResultData], ResultData], func)  # note: no validation has been done yet
+        self._result_validators.append(_result.ResultValidator(validated_func))
         return func
+
+    @overload
+    def result_validator_checked(
+        self, func: Callable[Concatenate[CallContext[AgentDeps], P], ResultData]
+    ) -> Callable[Concatenate[CallContext[AgentDeps], P], ResultData]: ...
+
+    @overload
+    def result_validator_checked(
+        self, func: Callable[Concatenate[CallContext[AgentDeps], P], Awaitable[ResultData]]
+    ) -> Callable[Concatenate[CallContext[AgentDeps], P], Awaitable[ResultData]]: ...
+
+    def result_validator_checked(
+        self, func: Callable[Concatenate[CallContext[AgentDeps], P], ResultData | Awaitable[ResultData]]
+    ) -> Callable[Concatenate[CallContext[AgentDeps], P], ResultData | Awaitable[ResultData]]:
+        """Decorator to register a result validator function."""
+        return self.result_validator(func)
 
     @overload
     def retriever_context(
@@ -546,3 +621,34 @@ class Agent(Generic[AgentDeps, ResultData]):
         else:
             msg = 'No tools available.'
         return _messages.RetryPrompt(content=f'Unknown tool name: {tool_name!r}. {msg}')
+
+
+def inject_for_agent(func: Callable[..., T]) -> Callable[..., T]:
+    signature = inspect.signature(func)
+    new_params: list[inspect.Parameter] = []
+    for param in signature.parameters.values():
+        if isinstance(param.default, DependsType):
+            # Explicitly has an = Depends(...)
+            new_params.append(param)
+            continue
+
+        if get_origin(param.annotation) is Annotated:
+            annotated_args = get_args(param.annotation)
+            if any(isinstance(arg, DependsType) for arg in annotated_args):
+                # Annotated with Depends(...)
+                new_params.append(param)
+                continue
+            type_hint = annotated_args[0]
+        else:
+            type_hint = param.annotation
+
+        if get_origin(type_hint) is CallContext:
+            # Set a default depends context
+            param = param.replace(annotation=Annotated[param.annotation, Depends(get_call_context)])
+
+        new_params.append(param)
+
+    func.__signature__ = signature.replace(parameters=new_params)  # type: ignore
+    func = inject(func)
+
+    return func
