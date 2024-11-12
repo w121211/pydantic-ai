@@ -11,5 +11,6 @@ In particular:
 
 from .depends import Depends, inject
 from .models import Depends as DependsType
+from .provider import Provider, dependency_provider
 
-__all__ = ('Depends', 'inject', 'DependsType')
+__all__ = ('Depends', 'inject', 'DependsType', 'Provider', 'dependency_provider')

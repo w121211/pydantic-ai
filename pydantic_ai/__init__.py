@@ -1,6 +1,6 @@
 from importlib.metadata import version
 
-from ._depends import Depends, DependsType, inject
+from ._depends import Depends, DependsType, Provider, dependency_provider
 from .agent import Agent
 from .dependencies import CallContext
 from .exceptions import ModelRetry, UnexpectedModelBehaviour, UserError
@@ -14,6 +14,7 @@ __all__ = (
     '__version__',
     'Depends',
     'DependsType',
-    'inject',
+    'Provider',
+    'dependency_provider',
 )
 __version__ = version('pydantic_ai')
