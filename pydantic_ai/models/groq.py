@@ -6,13 +6,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal, overload
 
-from httpx import AsyncClient as AsyncHTTPClient
 from groq import NOT_GIVEN, AsyncGroq, AsyncStream
 from groq.types import chat
-from groq.types.chat import ChatCompletionChunk, ChatCompletion
+from groq.types.chat import ChatCompletion, ChatCompletionChunk
 from groq.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+from httpx import AsyncClient as AsyncHTTPClient
 from typing_extensions import assert_never
-
 
 from .. import UnexpectedModelBehavior, _utils, result
 from ..messages import (
@@ -269,7 +268,7 @@ class GroqStreamTextResponse(StreamTextResponse):
 
         chunk = await self._response.__anext__()
         self._cost = _map_cost(chunk)
-        
+
         try:
             choice = chunk.choices[0]
         except IndexError:

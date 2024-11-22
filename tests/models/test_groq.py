@@ -8,7 +8,6 @@ from functools import cached_property
 from typing import Any, Literal, cast
 
 import pytest
-from inline_snapshot import snapshot
 from groq import AsyncGroq
 from groq.types import chat
 from groq.types.chat.chat_completion import Choice
@@ -21,6 +20,7 @@ from groq.types.chat.chat_completion_chunk import (
 from groq.types.chat.chat_completion_message import ChatCompletionMessage
 from groq.types.chat.chat_completion_message_tool_call import Function
 from groq.types.completion_usage import CompletionUsage
+from inline_snapshot import snapshot
 from typing_extensions import TypedDict
 
 from pydantic_ai import Agent, ModelRetry, UnexpectedModelBehavior, _utils
@@ -282,9 +282,7 @@ async def test_request_tool_call(allow_model_requests: None):
             ModelTextResponse(content='final response', timestamp=datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc)),
         ]
     )
-    assert result.cost() == snapshot(
-        Cost(request_tokens=5, response_tokens=3, total_tokens=9)
-    )
+    assert result.cost() == snapshot(Cost(request_tokens=5, response_tokens=3, total_tokens=9))
 
 
 FinishReason = Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']

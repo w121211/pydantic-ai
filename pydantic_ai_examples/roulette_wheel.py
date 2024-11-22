@@ -12,10 +12,12 @@ from typing import Literal
 
 from pydantic_ai import Agent, CallContext
 
+
 # Define the dependencies class
 @dataclass
 class Deps:
     winning_number: int
+
 
 # Create the agent with proper typing
 roulette_agent = Agent(
@@ -29,29 +31,38 @@ roulette_agent = Agent(
     ),
 )
 
+
 @roulette_agent.retriever
-async def roulette_wheel(ctx: CallContext[Deps], square: int) -> Literal['winner', 'loser']:
+async def roulette_wheel(
+    ctx: CallContext[Deps], square: int
+) -> Literal['winner', 'loser']:
     """Check if the bet square is a winner.
-    
+
     Args:
         ctx: The context containing the winning number.
         square: The number the player bet on.
     """
     return 'winner' if square == ctx.deps.winning_number else 'loser'
 
+
 async def main():
     # Set up dependencies
     winning_number = 18
     deps = Deps(winning_number=winning_number)
-    
+
     # Run some example bets using streaming
-    async with roulette_agent.run_stream('Put my money on square eighteen', deps=deps) as response:
+    async with roulette_agent.run_stream(
+        'Put my money on square eighteen', deps=deps
+    ) as response:
         result = await response.get_data()
         print('Bet on 18:', result)
-    
-    async with roulette_agent.run_stream('I bet five is the winner', deps=deps) as response:
+
+    async with roulette_agent.run_stream(
+        'I bet five is the winner', deps=deps
+    ) as response:
         result = await response.get_data()
         print('Bet on 5:', result)
+
 
 if __name__ == '__main__':
     asyncio.run(main())
