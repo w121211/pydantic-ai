@@ -64,7 +64,7 @@ jobs:
       - run: make docs
 
       - run: make docs-insiders
-        if: github.repository_owner == 'pydantic'
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           PPPR_TOKEN: ${{ secrets.PPPR_TOKEN }}
 
