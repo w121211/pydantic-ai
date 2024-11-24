@@ -8,18 +8,6 @@ from functools import cached_property
 from typing import Any, Literal, cast
 
 import pytest
-from groq import AsyncGroq
-from groq.types import chat
-from groq.types.chat.chat_completion import Choice
-from groq.types.chat.chat_completion_chunk import (
-    Choice as ChunkChoice,
-    ChoiceDelta,
-    ChoiceDeltaToolCall,
-    ChoiceDeltaToolCallFunction,
-)
-from groq.types.chat.chat_completion_message import ChatCompletionMessage
-from groq.types.chat.chat_completion_message_tool_call import Function
-from groq.types.completion_usage import CompletionUsage
 from inline_snapshot import snapshot
 from typing_extensions import TypedDict
 
@@ -34,11 +22,29 @@ from pydantic_ai.messages import (
     ToolReturn,
     UserPrompt,
 )
-from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.result import Cost
-from tests.conftest import IsNow
+from tests.conftest import IsNow, try_import
 
-pytestmark = pytest.mark.anyio
+with try_import() as imports_successful:
+    from groq import AsyncGroq
+    from groq.types import chat
+    from groq.types.chat.chat_completion import Choice
+    from groq.types.chat.chat_completion_chunk import (
+        Choice as ChunkChoice,
+        ChoiceDelta,
+        ChoiceDeltaToolCall,
+        ChoiceDeltaToolCallFunction,
+    )
+    from groq.types.chat.chat_completion_message import ChatCompletionMessage
+    from groq.types.chat.chat_completion_message_tool_call import Function
+    from groq.types.completion_usage import CompletionUsage
+
+    from pydantic_ai.models.groq import GroqModel
+
+pytestmark = [
+    pytest.mark.skipif(not imports_successful(), reason='groq not installed'),
+    pytest.mark.anyio,
+]
 
 
 def test_init():
