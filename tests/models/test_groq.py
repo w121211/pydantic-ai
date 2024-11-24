@@ -389,7 +389,7 @@ async def test_stream_structured(allow_model_requests: None):
         assert result.is_complete
 
     assert result.cost() == snapshot(Cost())
-    assert result.timestamp() == IsNow(tz=timezone.utc)
+    assert result.timestamp() == snapshot(datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc))
     assert result.all_messages() == snapshot(
         [
             UserPrompt(content='', timestamp=IsNow(tz=timezone.utc)),
