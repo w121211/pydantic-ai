@@ -94,7 +94,7 @@ class MockGroq:
         if stream:
             assert self.stream is not None, 'you can only used `stream=True` if `stream` is provided'
             # noinspection PyUnresolvedReferences
-            if isinstance(self.stream[0], list):
+            if isinstance(self.stream[0], list):  # pragma: no cover
                 response = MockAsyncStream(iter(self.stream[self.index]))  # type: ignore
             else:
                 response = MockAsyncStream(iter(self.stream))  # type: ignore
@@ -388,6 +388,20 @@ async def test_stream_structured(allow_model_requests: None):
         )
         assert result.is_complete
 
+    assert result.cost() == snapshot(Cost())
+    assert result.timestamp() == IsNow(tz=timezone.utc)
+    assert result.all_messages() == snapshot(
+        [
+            UserPrompt(content='', timestamp=IsNow(tz=timezone.utc)),
+            ModelStructuredResponse(
+                calls=[
+                    ToolCall(tool_name='final_result', args=ArgsJson(args_json='{"first": "One", "second": "Two"}'))
+                ],
+                timestamp=datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc),
+            ),
+        ]
+    )
+
 
 async def test_stream_structured_finish_reason(allow_model_requests: None):
     stream = (
@@ -423,4 +437,4 @@ async def test_no_content(allow_model_requests: None):
 
     with pytest.raises(UnexpectedModelBehavior, match='Streamed response ended without con'):
         async with agent.run_stream(''):
-            pass
+            pass  # pragma: no cover
