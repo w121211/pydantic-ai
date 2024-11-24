@@ -244,7 +244,7 @@ def infer_model(model: Model | KnownModelName) -> Model:
     elif model.startswith('groq:'):
         from .groq import GroqModel
 
-        return GroqModel(model[5:])
+        return GroqModel(model[5:])  # pyright: ignore[reportArgumentType]
     else:
         from ..exceptions import UserError
 

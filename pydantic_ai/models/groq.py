@@ -36,6 +36,27 @@ from . import (
     check_allow_model_requests,
 )
 
+GroqModelName = Literal[
+    'llama-3.1-70b-versatile',
+    'llama3-groq-70b-8192-tool-use-preview',
+    'llama3-groq-8b-8192-tool-use-preview',
+    'llama-3.1-70b-specdec',
+    'llama-3.1-8b-instant',
+    'llama-3.2-1b-preview',
+    'llama-3.2-3b-preview',
+    'llama-3.2-11b-vision-preview',
+    'llama-3.2-90b-vision-preview',
+    'llama3-70b-8192',
+    'llama3-8b-8192',
+    'mixtral-8x7b-32768',
+    'gemma2-9b-it',
+    'gemma-7b-it',
+]
+"""Named Groq models.
+
+See [the Groq docs](https://console.groq.com/docs/models) for a full list.
+"""
+
 
 @dataclass(init=False)
 class GroqModel(Model):
@@ -46,12 +67,12 @@ class GroqModel(Model):
     Apart from `__init__`, all methods are private or match those of the base class.
     """
 
-    model_name: str
+    model_name: GroqModelName
     client: AsyncGroq = field(repr=False)
 
     def __init__(
         self,
-        model_name: str,
+        model_name: GroqModelName,
         *,
         api_key: str | None = None,
         groq_client: AsyncGroq | None = None,
@@ -69,7 +90,7 @@ class GroqModel(Model):
                 client to use, if provided, `api_key` and `http_client` must be `None`.
             http_client: An existing `httpx.AsyncClient` to use for making HTTP requests.
         """
-        self.model_name: str = model_name
+        self.model_name = model_name
         if groq_client is not None:
             assert http_client is None, 'Cannot provide both `groq_client` and `http_client`'
             assert api_key is None, 'Cannot provide both `groq_client` and `api_key`'
