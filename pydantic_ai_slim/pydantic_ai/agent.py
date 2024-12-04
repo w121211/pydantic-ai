@@ -82,6 +82,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         retries: int = 1,
         result_tool_name: str = 'final_result',
         result_tool_description: str | None = None,
+        result_tool_disabled: bool = False,
         result_retries: int | None = None,
         tools: Sequence[Tool[AgentDeps] | ToolFuncEither[AgentDeps, ...]] = (),
         defer_model_check: bool = False,
@@ -101,6 +102,7 @@ class Agent(Generic[AgentDeps, ResultData]):
             retries: The default number of retries to allow before raising an error.
             result_tool_name: The name of the tool to use for the final result.
             result_tool_description: The description of the final result tool.
+            result_tool_disabled: Disables the final result tool, requiring you to call `ctx.end_run` to end runs.
             result_retries: The maximum number of retries to allow for result validation, defaults to `retries`.
             tools: Tools to register with the agent, you can also register tools via the decorators
                 [`@agent.tool`][pydantic_ai.Agent.tool] and [`@agent.tool_plain`][pydantic_ai.Agent.tool_plain].
@@ -115,11 +117,15 @@ class Agent(Generic[AgentDeps, ResultData]):
         else:
             self.model = models.infer_model(model)
 
-        self._result_schema = _result.ResultSchema[result_type].build(
-            result_type, result_tool_name, result_tool_description
-        )
-        # if the result tool is None, or its schema allows `str`, we allow plain text results
-        self._allow_text_result = self._result_schema is None or self._result_schema.allow_text_result
+        if result_tool_disabled:
+            self._result_schema = None
+            self._allow_text_result = False
+        else:
+            self._result_schema = _result.ResultSchema[result_type].build(
+                result_type, result_tool_name, result_tool_description
+            )
+            # if the result tool is None, or its schema allows `str`, we allow plain text results
+            self._allow_text_result = self._result_schema is None or self._result_schema.allow_text_result
 
         self._system_prompts = (system_prompt,) if isinstance(system_prompt, str) else tuple(system_prompt)
         self._function_tools = {}

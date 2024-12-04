@@ -53,6 +53,7 @@ class RunContext(Generic[AgentDeps, ResultData]):
 
     def end_run(self, result: ResultData) -> NoReturn:
         """End the call to `agent.run` as soon as possible, using the provided value as the result."""
+        # NOTE: this means we ignore any other tools called concurrently
         raise EndAgentRun(result, tool_name=self.tool_name)
 
 
