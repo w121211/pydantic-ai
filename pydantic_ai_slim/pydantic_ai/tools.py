@@ -3,19 +3,17 @@ from __future__ import annotations as _annotations
 import inspect
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, Union, cast
+from typing import Any, Callable, Generic, NoReturn, Union, cast
 
 from pydantic import ValidationError
 from pydantic_core import SchemaValidator
-from typing_extensions import Concatenate, ParamSpec, final
+from typing_extensions import Concatenate, ParamSpec, TypeVar, final
 
 from . import _pydantic, _utils, messages
 from .exceptions import ModelRetry, UnexpectedModelBehavior
 
-if TYPE_CHECKING:
-    from .result import ResultData
-else:
-    ResultData = Any
+ResultData = TypeVar('ResultData', default=Any)
+"""Type variable for the result data of a run."""
 
 
 __all__ = (
@@ -34,8 +32,16 @@ AgentDeps = TypeVar('AgentDeps')
 """Type variable for agent dependencies."""
 
 
+class EndAgentRun(Exception):
+    """Signal to end the current agent run and return the provided result."""
+
+    def __init__(self, result: Any, tool_name: str | None) -> None:
+        self.result = result
+        self.tool_name = tool_name
+
+
 @dataclass
-class RunContext(Generic[AgentDeps]):
+class RunContext(Generic[AgentDeps, ResultData]):
     """Information about the current call."""
 
     deps: AgentDeps
@@ -44,6 +50,10 @@ class RunContext(Generic[AgentDeps]):
     """Number of retries so far."""
     tool_name: str | None
     """Name of the tool being called."""
+
+    def end_run(self, result: ResultData) -> NoReturn:
+        """End the call to `agent.run` as soon as possible, using the provided value as the result."""
+        raise EndAgentRun(result, tool_name=self.tool_name)
 
 
 ToolParams = ParamSpec('ToolParams')

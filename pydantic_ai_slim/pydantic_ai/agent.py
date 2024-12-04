@@ -20,7 +20,7 @@ from . import (
     result,
 )
 from .result import ResultData
-from .tools import AgentDeps, RunContext, Tool, ToolFuncContext, ToolFuncEither, ToolFuncPlain, ToolParams
+from .tools import AgentDeps, EndAgentRun, RunContext, Tool, ToolFuncContext, ToolFuncEither, ToolFuncPlain, ToolParams
 
 __all__ = ('Agent',)
 
@@ -686,8 +686,12 @@ class Agent(Generic[AgentDeps, ResultData]):
                 else:
                     messages.append(self._unknown_tool(call.tool_name))
 
-            with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]):
-                messages += await asyncio.gather(*tasks)
+            with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]) as span:
+                try:
+                    messages += await asyncio.gather(*tasks)
+                except EndAgentRun as e:
+                    span.set_attribute('end_agent_run', e.tool_name)
+                    return _MarkFinalResult(data=e.result)
             return messages
         else:
             assert_never(model_response)
