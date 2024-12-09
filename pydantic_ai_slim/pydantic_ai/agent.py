@@ -2,9 +2,11 @@ from __future__ import annotations as _annotations
 
 import asyncio
 import dataclasses
+import inspect
 from collections.abc import AsyncIterator, Awaitable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
+from types import FrameType
 from typing import Any, Callable, Generic, cast, final, overload
 
 import logfire_api
@@ -20,7 +22,18 @@ from . import (
     result,
 )
 from .result import ResultData
-from .tools import AgentDeps, EndAgentRun, RunContext, Tool, ToolFuncContext, ToolFuncEither, ToolFuncPlain, ToolParams
+from .tools import (
+    AgentDeps,
+    EndAgentRun,
+    RunContext,
+    Tool,
+    ToolDefinition,
+    ToolFuncContext,
+    ToolFuncEither,
+    ToolFuncPlain,
+    ToolParams,
+    ToolPrepareFunc,
+)
 
 __all__ = ('Agent',)
 
@@ -54,6 +67,11 @@ class Agent(Generic[AgentDeps, ResultData]):
     # dataclass fields mostly for my sanity — knowing what attributes are available
     model: models.Model | models.KnownModelName | None
     """The default model configured for this agent."""
+    name: str | None
+    """The name of the agent, used for logging.
+
+    If `None`, we try to infer the agent name from the call frame when the agent is first run.
+    """
     _result_schema: _result.ResultSchema[ResultData] | None = field(repr=False)
     _result_validators: list[_result.ResultValidator[AgentDeps, ResultData]] = field(repr=False)
     _allow_text_result: bool = field(repr=False)
@@ -79,10 +97,10 @@ class Agent(Generic[AgentDeps, ResultData]):
         result_type: type[ResultData] = str,
         system_prompt: str | Sequence[str] = (),
         deps_type: type[AgentDeps] = NoneType,
+        name: str | None = None,
         retries: int = 1,
         result_tool_name: str = 'final_result',
         result_tool_description: str | None = None,
-        result_tool_disabled: bool = False,
         result_retries: int | None = None,
         tools: Sequence[Tool[AgentDeps] | ToolFuncEither[AgentDeps, ...]] = (),
         defer_model_check: bool = False,
@@ -99,6 +117,8 @@ class Agent(Generic[AgentDeps, ResultData]):
                 parameterize the agent, and therefore get the best out of static type checking.
                 If you're not using deps, but want type checking to pass, you can set `deps=None` to satisfy Pyright
                 or add a type hint `: Agent[None, <return type>]`.
+            name: The name of the agent, used for logging. If `None`, we try to infer the agent name from the call frame
+                when the agent is first run.
             retries: The default number of retries to allow before raising an error.
             result_tool_name: The name of the tool to use for the final result.
             result_tool_description: The description of the final result tool.
@@ -117,21 +137,21 @@ class Agent(Generic[AgentDeps, ResultData]):
         else:
             self.model = models.infer_model(model)
 
-        if result_tool_disabled:
-            self._result_schema = None
-            self._allow_text_result = False
-        else:
-            self._result_schema = _result.ResultSchema[result_type].build(
-                result_type, result_tool_name, result_tool_description
-            )
-            # if the result tool is None, or its schema allows `str`, we allow plain text results
-            self._allow_text_result = self._result_schema is None or self._result_schema.allow_text_result
+        self.name = name
+        self._result_schema = _result.ResultSchema[result_type].build(
+            result_type, result_tool_name, result_tool_description
+        )
+        # if the result tool is None, or its schema allows `str`, we allow plain text results
+        self._allow_text_result = self._result_schema is None or self._result_schema.allow_text_result
 
         self._system_prompts = (system_prompt,) if isinstance(system_prompt, str) else tuple(system_prompt)
         self._function_tools = {}
         self._default_retries = retries
         for tool in tools:
-            self._register_tool(Tool.infer(tool))
+            if isinstance(tool, Tool):
+                self._register_tool(tool)
+            else:
+                self._register_tool(Tool(tool))
         self._deps_type = deps_type
         self._system_prompt_functions = []
         self._max_result_retries = result_retries if result_retries is not None else retries
@@ -145,6 +165,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         message_history: list[_messages.Message] | None = None,
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
+        infer_name: bool = True,
     ) -> result.RunResult[ResultData]:
         """Run the agent with a user prompt in async mode.
 
@@ -153,33 +174,40 @@ class Agent(Generic[AgentDeps, ResultData]):
             message_history: History of the conversation so far.
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
+            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
             The result of the run.
         """
-        model_used, custom_model, agent_model = await self._get_agent_model(model)
+        if infer_name and self.name is None:
+            self._infer_name(inspect.currentframe())
+        model_used, mode_selection = await self._get_model(model)
 
         deps = self._get_deps(deps)
 
         with _logfire.span(
-            'agent run {prompt=}',
+            '{agent_name} run {prompt=}',
             prompt=user_prompt,
             agent=self,
-            custom_model=custom_model,
+            mode_selection=mode_selection,
             model_name=model_used.name(),
+            agent_name=self.name or 'agent',
         ) as run_span:
             new_message_index, messages = await self._prepare_messages(deps, user_prompt, message_history)
             self.last_run_messages = messages
 
             for tool in self._function_tools.values():
-                tool.reset()
+                tool.current_retry = 0
 
             cost = result.Cost()
 
             run_step = 0
             while True:
                 run_step += 1
-                with _logfire.span('model request {run_step=}', run_step=run_step) as model_req_span:
+                with _logfire.span('preparing model and tools {run_step=}', run_step=run_step):
+                    agent_model = await self._prepare_model(model_used, deps)
+
+                with _logfire.span('model request', run_step=run_step) as model_req_span:
                     model_response, request_cost = await agent_model.request(messages)
                     model_req_span.set_attribute('response', model_response)
                     model_req_span.set_attribute('cost', request_cost)
@@ -188,12 +216,15 @@ class Agent(Generic[AgentDeps, ResultData]):
                 messages.append(model_response)
                 cost += request_cost
 
-                with _logfire.span('handle model response') as handle_span:
-                    either = await self._handle_model_response(model_response, deps)
+                with _logfire.span('handle model response', run_step=run_step) as handle_span:
+                    final_result, response_messages = await self._handle_model_response(model_response, deps)
 
-                    if isinstance(either, _MarkFinalResult):
-                        # we have a final result, end the conversation
-                        result_data = either.data
+                    # Add all messages to the conversation
+                    messages.extend(response_messages)
+
+                    # Check if we got a final result
+                    if final_result is not None:
+                        result_data = final_result.data
                         run_span.set_attribute('all_messages', messages)
                         run_span.set_attribute('cost', cost)
                         handle_span.set_attribute('result', result_data)
@@ -201,11 +232,9 @@ class Agent(Generic[AgentDeps, ResultData]):
                         return result.RunResult(messages, new_message_index, result_data, cost)
                     else:
                         # continue the conversation
-                        tool_responses = either
-                        handle_span.set_attribute('tool_responses', tool_responses)
-                        response_msgs = ' '.join(m.role for m in tool_responses)
+                        handle_span.set_attribute('tool_responses', response_messages)
+                        response_msgs = ' '.join(r.role for r in response_messages)
                         handle_span.message = f'handle model response -> {response_msgs}'
-                        messages.extend(tool_responses)
 
     def run_sync(
         self,
@@ -214,6 +243,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         message_history: list[_messages.Message] | None = None,
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
+        infer_name: bool = True,
     ) -> result.RunResult[ResultData]:
         """Run the agent with a user prompt synchronously.
 
@@ -224,12 +254,17 @@ class Agent(Generic[AgentDeps, ResultData]):
             message_history: History of the conversation so far.
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
+            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
             The result of the run.
         """
+        if infer_name and self.name is None:
+            self._infer_name(inspect.currentframe())
         loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self.run(user_prompt, message_history=message_history, model=model, deps=deps))
+        return loop.run_until_complete(
+            self.run(user_prompt, message_history=message_history, model=model, deps=deps, infer_name=False)
+        )
 
     @asynccontextmanager
     async def run_stream(
@@ -239,6 +274,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         message_history: list[_messages.Message] | None = None,
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
+        infer_name: bool = True,
     ) -> AsyncIterator[result.StreamedRunResult[AgentDeps, ResultData]]:
         """Run the agent with a user prompt in async mode, returning a streamed response.
 
@@ -247,32 +283,42 @@ class Agent(Generic[AgentDeps, ResultData]):
             message_history: History of the conversation so far.
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
+            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
             The result of the run.
         """
-        model_used, custom_model, agent_model = await self._get_agent_model(model)
+        if infer_name and self.name is None:
+            # f_back because `asynccontextmanager` adds one frame
+            if frame := inspect.currentframe():  # pragma: no branch
+                self._infer_name(frame.f_back)
+        model_used, mode_selection = await self._get_model(model)
 
         deps = self._get_deps(deps)
 
         with _logfire.span(
-            'agent run stream {prompt=}',
+            '{agent_name} run stream {prompt=}',
             prompt=user_prompt,
             agent=self,
-            custom_model=custom_model,
+            mode_selection=mode_selection,
             model_name=model_used.name(),
+            agent_name=self.name or 'agent',
         ) as run_span:
             new_message_index, messages = await self._prepare_messages(deps, user_prompt, message_history)
             self.last_run_messages = messages
 
             for tool in self._function_tools.values():
-                tool.reset()
+                tool.current_retry = 0
 
             cost = result.Cost()
 
             run_step = 0
             while True:
                 run_step += 1
+
+                with _logfire.span('preparing model and tools {run_step=}', run_step=run_step):
+                    agent_model = await self._prepare_model(model_used, deps)
+
                 with _logfire.span('model request {run_step=}', run_step=run_step) as model_req_span:
                     async with agent_model.request_stream(messages) as model_response:
                         model_req_span.set_attribute('response_type', model_response.__class__.__name__)
@@ -281,10 +327,16 @@ class Agent(Generic[AgentDeps, ResultData]):
                         model_req_span.__exit__(None, None, None)
 
                         with _logfire.span('handle model response') as handle_span:
-                            either = await self._handle_streamed_model_response(model_response, deps)
+                            final_result, response_messages = await self._handle_streamed_model_response(
+                                model_response, deps
+                            )
 
-                            if isinstance(either, _MarkFinalResult):
-                                result_stream = either.data
+                            # Add all messages to the conversation
+                            messages.extend(response_messages)
+
+                            # Check if we got a final result
+                            if final_result is not None:
+                                result_stream = final_result.data
                                 run_span.set_attribute('all_messages', messages)
                                 handle_span.set_attribute('result_type', result_stream.__class__.__name__)
                                 handle_span.message = 'handle model response -> final result'
@@ -300,11 +352,10 @@ class Agent(Generic[AgentDeps, ResultData]):
                                 )
                                 return
                             else:
-                                tool_responses = either
-                                handle_span.set_attribute('tool_responses', tool_responses)
-                                response_msgs = ' '.join(m.role for m in tool_responses)
+                                # continue the conversation
+                                handle_span.set_attribute('tool_responses', response_messages)
+                                response_msgs = ' '.join(r.role for r in response_messages)
                                 handle_span.message = f'handle model response -> {response_msgs}'
-                                messages.extend(tool_responses)
                                 # the model_response should have been fully streamed by now, we can add it's cost
                                 cost += model_response.cost()
 
@@ -454,7 +505,11 @@ class Agent(Generic[AgentDeps, ResultData]):
 
     @overload
     def tool(
-        self, /, *, retries: int | None = None
+        self,
+        /,
+        *,
+        retries: int | None = None,
+        prepare: ToolPrepareFunc[AgentDeps] | None = None,
     ) -> Callable[[ToolFuncContext[AgentDeps, ToolParams]], ToolFuncContext[AgentDeps, ToolParams]]: ...
 
     def tool(
@@ -463,9 +518,9 @@ class Agent(Generic[AgentDeps, ResultData]):
         /,
         *,
         retries: int | None = None,
+        prepare: ToolPrepareFunc[AgentDeps] | None = None,
     ) -> Any:
-        """Decorator to register a tool function which takes
-        [`RunContext`][pydantic_ai.tools.RunContext] as its first argument.
+        """Decorator to register a tool function which takes [`RunContext`][pydantic_ai.tools.RunContext] as its first argument.
 
         Can decorate a sync or async functions.
 
@@ -498,20 +553,23 @@ class Agent(Generic[AgentDeps, ResultData]):
             func: The tool function to register.
             retries: The number of retries to allow for this tool, defaults to the agent's default retries,
                 which defaults to 1.
-        """  # noqa: D205
+            prepare: custom method to prepare the tool definition for each step, return `None` to omit this
+                tool from a given step. This is useful if you want to customise a tool at call time,
+                or omit it completely from a step. See [`ToolPrepareFunc`][pydantic_ai.tools.ToolPrepareFunc].
+        """
         if func is None:
 
             def tool_decorator(
                 func_: ToolFuncContext[AgentDeps, ToolParams],
             ) -> ToolFuncContext[AgentDeps, ToolParams]:
                 # noinspection PyTypeChecker
-                self._register_function(func_, True, retries)
+                self._register_function(func_, True, retries, prepare)
                 return func_
 
             return tool_decorator
         else:
             # noinspection PyTypeChecker
-            self._register_function(func, True, retries)
+            self._register_function(func, True, retries, prepare)
             return func
 
     @overload
@@ -519,10 +577,21 @@ class Agent(Generic[AgentDeps, ResultData]):
 
     @overload
     def tool_plain(
-        self, /, *, retries: int | None = None
+        self,
+        /,
+        *,
+        retries: int | None = None,
+        prepare: ToolPrepareFunc[AgentDeps] | None = None,
     ) -> Callable[[ToolFuncPlain[ToolParams]], ToolFuncPlain[ToolParams]]: ...
 
-    def tool_plain(self, func: ToolFuncPlain[ToolParams] | None = None, /, *, retries: int | None = None) -> Any:
+    def tool_plain(
+        self,
+        func: ToolFuncPlain[ToolParams] | None = None,
+        /,
+        *,
+        retries: int | None = None,
+        prepare: ToolPrepareFunc[AgentDeps] | None = None,
+    ) -> Any:
         """Decorator to register a tool function which DOES NOT take `RunContext` as an argument.
 
         Can decorate a sync or async functions.
@@ -556,30 +625,38 @@ class Agent(Generic[AgentDeps, ResultData]):
             func: The tool function to register.
             retries: The number of retries to allow for this tool, defaults to the agent's default retries,
                 which defaults to 1.
+            prepare: custom method to prepare the tool definition for each step, return `None` to omit this
+                tool from a given step. This is useful if you want to customise a tool at call time,
+                or omit it completely from a step. See [`ToolPrepareFunc`][pydantic_ai.tools.ToolPrepareFunc].
         """
         if func is None:
 
             def tool_decorator(func_: ToolFuncPlain[ToolParams]) -> ToolFuncPlain[ToolParams]:
                 # noinspection PyTypeChecker
-                self._register_function(func_, False, retries)
+                self._register_function(func_, False, retries, prepare)
                 return func_
 
             return tool_decorator
         else:
-            self._register_function(func, False, retries)
+            self._register_function(func, False, retries, prepare)
             return func
 
     def _register_function(
-        self, func: ToolFuncEither[AgentDeps, ToolParams], takes_ctx: bool, retries: int | None
+        self,
+        func: ToolFuncEither[AgentDeps, ToolParams],
+        takes_ctx: bool,
+        retries: int | None,
+        prepare: ToolPrepareFunc[AgentDeps] | None,
     ) -> None:
         """Private utility to register a function as a tool."""
         retries_ = retries if retries is not None else self._default_retries
-        tool = Tool(func, takes_ctx, max_retries=retries_)
+        tool = Tool(func, takes_ctx=takes_ctx, max_retries=retries_, prepare=prepare)
         self._register_tool(tool)
 
     def _register_tool(self, tool: Tool[AgentDeps]) -> None:
         """Private utility to register a tool instance."""
         if tool.max_retries is None:
+            # noinspection PyTypeChecker
             tool = dataclasses.replace(tool, max_retries=self._default_retries)
 
         if tool.name in self._function_tools:
@@ -590,16 +667,14 @@ class Agent(Generic[AgentDeps, ResultData]):
 
         self._function_tools[tool.name] = tool
 
-    async def _get_agent_model(
-        self, model: models.Model | models.KnownModelName | None
-    ) -> tuple[models.Model, models.Model | None, models.AgentModel]:
+    async def _get_model(self, model: models.Model | models.KnownModelName | None) -> tuple[models.Model, str]:
         """Create a model configured for this agent.
 
         Args:
             model: model to use for this run, required if `model` was not set when creating the agent.
 
         Returns:
-            a tuple of `(model used, custom_model if any, agent_model)`
+            a tuple of `(model used, how the model was selected)`
         """
         model_: models.Model
         if some_model := self._override_model:
@@ -610,19 +685,35 @@ class Agent(Generic[AgentDeps, ResultData]):
                     '(Even when `override(model=...)` is customizing the model that will actually be called)'
                 )
             model_ = some_model.value
-            custom_model = None
+            mode_selection = 'override-model'
         elif model is not None:
-            custom_model = model_ = models.infer_model(model)
+            model_ = models.infer_model(model)
+            mode_selection = 'custom'
         elif self.model is not None:
             # noinspection PyTypeChecker
             model_ = self.model = models.infer_model(self.model)
-            custom_model = None
+            mode_selection = 'from-agent'
         else:
             raise exceptions.UserError('`model` must be set either when creating the agent or when calling it.')
 
-        result_tools = list(self._result_schema.tools.values()) if self._result_schema else None
-        agent_model = await model_.agent_model(self._function_tools, self._allow_text_result, result_tools)
-        return model_, custom_model, agent_model
+        return model_, mode_selection
+
+    async def _prepare_model(self, model: models.Model, deps: AgentDeps) -> models.AgentModel:
+        """Create building tools and create an agent model."""
+        function_tools: list[ToolDefinition] = []
+
+        async def add_tool(tool: Tool[AgentDeps]) -> None:
+            ctx = RunContext(deps, tool.current_retry, tool.name)
+            if tool_def := await tool.prepare_tool_def(ctx):
+                function_tools.append(tool_def)
+
+        await asyncio.gather(*map(add_tool, self._function_tools.values()))
+
+        return await model.agent_model(
+            function_tools=function_tools,
+            allow_text_result=self._allow_text_result,
+            result_tools=self._result_schema.tool_defs() if self._result_schema is not None else [],
+        )
 
     async def _prepare_messages(
         self, deps: AgentDeps, user_prompt: str, message_history: list[_messages.Message] | None
@@ -642,11 +733,11 @@ class Agent(Generic[AgentDeps, ResultData]):
 
     async def _handle_model_response(
         self, model_response: _messages.ModelAnyResponse, deps: AgentDeps
-    ) -> _MarkFinalResult[ResultData] | list[_messages.Message]:
+    ) -> tuple[_MarkFinalResult[ResultData] | None, list[_messages.Message]]:
         """Process a non-streamed response from the model.
 
         Returns:
-            Return `Either` — left: final result data, right: list of messages to send back to the model.
+            A tuple of `(final_result, messages)`. If `final_result` is not `None`, the conversation should end.
         """
         if model_response.role == 'model-text-response':
             # plain string response
@@ -656,15 +747,15 @@ class Agent(Generic[AgentDeps, ResultData]):
                     result_data = await self._validate_result(result_data_input, deps, None)
                 except _result.ToolRetryError as e:
                     self._incr_result_retry()
-                    return [e.tool_retry]
+                    return None, [e.tool_retry]
                 else:
-                    return _MarkFinalResult(result_data)
+                    return _MarkFinalResult(result_data), []
             else:
                 self._incr_result_retry()
                 response = _messages.RetryPrompt(
                     content='Plain text responses are not permitted, please call one of the functions instead.',
                 )
-                return [response]
+                return None, [response]
         elif model_response.role == 'model-structured-response':
             if self._result_schema is not None:
                 # if there's a result schema, and any of the calls match one of its tools, return the result
@@ -676,9 +767,15 @@ class Agent(Generic[AgentDeps, ResultData]):
                         result_data = await self._validate_result(result_data, deps, call)
                     except _result.ToolRetryError as e:
                         self._incr_result_retry()
-                        return [e.tool_retry]
+                        return None, [e.tool_retry]
                     else:
-                        return _MarkFinalResult(result_data)
+                        # Add a ToolReturn message for the schema tool call
+                        tool_return = _messages.ToolReturn(
+                            tool_name=call.tool_name,
+                            content='Final result processed.',
+                            tool_id=call.tool_id,
+                        )
+                        return _MarkFinalResult(result_data), [tool_return]
 
             if not model_response.calls:
                 raise exceptions.UnexpectedModelBehavior('Received empty tool call message')
@@ -694,29 +791,27 @@ class Agent(Generic[AgentDeps, ResultData]):
 
             with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]) as span:
                 try:
-                    messages += await asyncio.gather(*tasks)
+                    task_results: Sequence[_messages.Message] = await asyncio.gather(*tasks)
+                    messages.extend(task_results)
                 except EndAgentRun as e:
                     span.set_attribute('end_agent_run', e.tool_name)
-                    return _MarkFinalResult(data=e.result)
-            return messages
+                    return _MarkFinalResult(data=e.result), []
+            return None, messages
         else:
             assert_never(model_response)
 
     async def _handle_streamed_model_response(
         self, model_response: models.EitherStreamedResponse, deps: AgentDeps
-    ) -> _MarkFinalResult[models.EitherStreamedResponse] | list[_messages.Message]:
+    ) -> tuple[_MarkFinalResult[models.EitherStreamedResponse] | None, list[_messages.Message]]:
         """Process a streamed response from the model.
 
-        TODO: change the response type to `models.EitherStreamedResponse | list[_messages.Message]` once we drop 3.9
-        (with 3.9 we get `TypeError: Subscripted generics cannot be used with class and instance checks`)
-
         Returns:
-            Return `Either` — left: final result data, right: list of messages to send back to the model.
+            A tuple of (final_result, messages). If final_result is not None, the conversation should end.
         """
         if isinstance(model_response, models.StreamTextResponse):
             # plain string response
             if self._allow_text_result:
-                return _MarkFinalResult(model_response)
+                return _MarkFinalResult(model_response), []
             else:
                 self._incr_result_retry()
                 response = _messages.RetryPrompt(
@@ -726,7 +821,7 @@ class Agent(Generic[AgentDeps, ResultData]):
                 async for _ in model_response:
                     pass
 
-                return [response]
+                return None, [response]
         else:
             assert isinstance(model_response, models.StreamStructuredResponse), f'Unexpected response: {model_response}'
             if self._result_schema is not None:
@@ -740,8 +835,14 @@ class Agent(Generic[AgentDeps, ResultData]):
                         break
                     structured_msg = model_response.get()
 
-                if self._result_schema.find_tool(structured_msg):
-                    return _MarkFinalResult(model_response)
+                if match := self._result_schema.find_tool(structured_msg):
+                    call, _ = match
+                    tool_return = _messages.ToolReturn(
+                        tool_name=call.tool_name,
+                        content='Final result processed.',
+                        tool_id=call.tool_id,
+                    )
+                    return _MarkFinalResult(model_response), [tool_return]
 
             # the model is calling a tool function, consume the response to get the next message
             async for _ in model_response:
@@ -760,8 +861,9 @@ class Agent(Generic[AgentDeps, ResultData]):
                     messages.append(self._unknown_tool(call.tool_name))
 
             with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]):
-                messages += await asyncio.gather(*tasks)
-            return messages
+                task_results: Sequence[_messages.Message] = await asyncio.gather(*tasks)
+                messages.extend(task_results)
+            return None, messages
 
     async def _validate_result(
         self, result_data: ResultData, deps: AgentDeps, tool_call: _messages.ToolCall | None
@@ -808,12 +910,33 @@ class Agent(Generic[AgentDeps, ResultData]):
         else:
             return deps
 
+    def _infer_name(self, function_frame: FrameType | None) -> None:
+        """Infer the agent name from the call frame.
+
+        Usage should be `self._infer_name(inspect.currentframe())`.
+        """
+        assert self.name is None, 'Name already set'
+        if function_frame is not None:  # pragma: no branch
+            if parent_frame := function_frame.f_back:  # pragma: no branch
+                for name, item in parent_frame.f_locals.items():
+                    if item is self:
+                        self.name = name
+                        return
+                if parent_frame.f_locals != parent_frame.f_globals:
+                    # if we couldn't find the agent in locals and globals are a different dict, try globals
+                    for name, item in parent_frame.f_globals.items():
+                        if item is self:
+                            self.name = name
+                            return
+
 
 @dataclass
 class _MarkFinalResult(Generic[ResultData]):
     """Marker class to indicate that the result is the final result.
 
     This allows us to use `isinstance`, which wouldn't be possible if we were returning `ResultData` directly.
+
+    It also avoids problems in the case where the result type is itself `None`, but is set.
     """
 
     data: ResultData
