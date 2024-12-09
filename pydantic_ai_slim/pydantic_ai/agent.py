@@ -13,6 +13,7 @@ import logfire_api
 from typing_extensions import assert_never
 
 from . import (
+    _exceptions,
     _result,
     _system_prompt,
     _utils,
@@ -24,7 +25,6 @@ from . import (
 from .result import ResultData
 from .tools import (
     AgentDeps,
-    EndAgentRun,
     RunContext,
     Tool,
     ToolDefinition,
@@ -122,7 +122,6 @@ class Agent(Generic[AgentDeps, ResultData]):
             retries: The default number of retries to allow before raising an error.
             result_tool_name: The name of the tool to use for the final result.
             result_tool_description: The description of the final result tool.
-            result_tool_disabled: Disables the final result tool, requiring you to call `ctx.end_run` to end runs.
             result_retries: The maximum number of retries to allow for result validation, defaults to `retries`.
             tools: Tools to register with the agent, you can also register tools via the decorators
                 [`@agent.tool`][pydantic_ai.Agent.tool] and [`@agent.tool_plain`][pydantic_ai.Agent.tool_plain].
@@ -793,8 +792,8 @@ class Agent(Generic[AgentDeps, ResultData]):
                 try:
                     task_results: Sequence[_messages.Message] = await asyncio.gather(*tasks)
                     messages.extend(task_results)
-                except EndAgentRun as e:
-                    span.set_attribute('end_agent_run', e.tool_name)
+                except _exceptions.StopAgentRun as e:
+                    span.set_attribute('stop_agent_run', e.tool_name)
                     return _MarkFinalResult(data=e.result), []
             return None, messages
         else:
@@ -860,9 +859,13 @@ class Agent(Generic[AgentDeps, ResultData]):
                 else:
                     messages.append(self._unknown_tool(call.tool_name))
 
-            with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]):
-                task_results: Sequence[_messages.Message] = await asyncio.gather(*tasks)
-                messages.extend(task_results)
+            with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]) as span:
+                try:
+                    task_results: Sequence[_messages.Message] = await asyncio.gather(*tasks)
+                    messages.extend(task_results)
+                except _exceptions.StopAgentRun as e:
+                    span.set_attribute('stop_agent_run', e.tool_name)
+                    return _MarkFinalResult(data=e.result), []
             return None, messages
 
     async def _validate_result(

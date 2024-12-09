@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from pydantic_core import SchemaValidator
 from typing_extensions import Concatenate, ParamSpec, TypeAlias, TypeVar
 
-from . import _pydantic, _utils, messages
+from . import _exceptions, _pydantic, _utils, messages
 from .exceptions import ModelRetry, UnexpectedModelBehavior
 
 ResultData = TypeVar('ResultData', default=Any)
@@ -35,14 +35,6 @@ AgentDeps = TypeVar('AgentDeps')
 """Type variable for agent dependencies."""
 
 
-class EndAgentRun(Exception):
-    """Signal to end the current agent run and return the provided result."""
-
-    def __init__(self, result: Any, tool_name: str | None) -> None:
-        self.result = result
-        self.tool_name = tool_name
-
-
 @dataclass
 class RunContext(Generic[AgentDeps, ResultData]):
     """Information about the current call."""
@@ -54,10 +46,10 @@ class RunContext(Generic[AgentDeps, ResultData]):
     tool_name: str | None = None
     """Name of the tool being called."""
 
-    def end_run(self, result: ResultData) -> NoReturn:
-        """End the call to `agent.run` as soon as possible, using the provided value as the result."""
+    def stop_run(self, result: ResultData) -> NoReturn:
+        """Stop the call to `agent.run` as soon as possible, using the provided value as the result."""
         # NOTE: this means we ignore any other tools called concurrently
-        raise EndAgentRun(result, tool_name=self.tool_name)
+        raise _exceptions.StopAgentRun(result, tool_name=self.tool_name)
 
 
 ToolParams = ParamSpec('ToolParams')
