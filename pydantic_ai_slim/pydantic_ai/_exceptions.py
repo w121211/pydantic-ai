@@ -14,9 +14,3 @@ class StopAgentRun(Exception):
     def __init__(self, result: Any, tool_name: str | None) -> None:
         self.result = result
         self.tool_name = tool_name
-
-    def __str__(self) -> str:
-        if self.tool_name:
-            return f'{self.tool_name}, result:\n{self.result}'
-        else:
-            return str(self.result)
