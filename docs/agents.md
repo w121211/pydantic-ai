@@ -801,16 +801,21 @@ agent = Agent('test')
 
 
 @agent.tool
-def my_tool_call(ctx: RunContext[int], answer: str) -> str:
+def tool_one(ctx: RunContext[int], value: str) -> str:
     if ctx.deps == 42:
-        ctx.stop_run('Special dependency detected')
-    return f'Tool call: answer={answer}'
+        ctx.stop_run('Run stopped early due to special dependency value')
+    return f'tool_one call: value={value}'
+
+
+@agent.tool
+def tool_two(ctx: RunContext[int], value: str) -> str:
+    return f'tool_two call: value={value}'
 
 
 result = agent.run_sync('testing...', deps=41)
 print(result.data)
-#> {"my_tool_call":"Tool call: answer=a"}
+#> {"tool_one":"tool_one call: value=a","tool_two":"tool_two call: value=a"}
 result = agent.run_sync('testing...', deps=42)
 print(result.data)
-#> Special dependency detected
+#> Run stopped early due to special dependency value
 ```

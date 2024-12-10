@@ -470,9 +470,15 @@ agent = Agent('test', tools=[ctx_tool], deps_type=int)
 
 def test_ctx_stop_run(set_event_loop: None):
     """Ensure the ctx_stop_run_tool is used to complete the agent run."""
-    def ctx_stop_run_tool(ctx: RunContext[int]):
-        ctx.stop_run(ctx.deps * 'abc')
+    def ctx_stop_run_tool(ctx: RunContext[int]) -> int:
+        if ctx.deps == 2:
+            ctx.stop_run('abc')
+        return 123
 
-    agent = Agent('test', result_type=str, tools=[Tool(ctx_stop_run_tool, takes_ctx=True)], deps_type=int)
+    agent = Agent('test', tools=[Tool(ctx_stop_run_tool, takes_ctx=True)], deps_type=int)
+
+    result = agent.run_sync('foobar', deps=1)
+    assert result.data == snapshot('{"ctx_stop_run_tool":123}')
+
     result = agent.run_sync('foobar', deps=2)
-    assert result.data == snapshot('abcabc')
+    assert result.data == snapshot('abc')

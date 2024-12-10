@@ -856,6 +856,7 @@ class Agent(Generic[AgentDeps, ResultData]):
 
                 return None, [response]
         else:
+            assert isinstance(model_response, models.StreamStructuredResponse), f'Unexpected response: {model_response}'
             if self._result_schema is not None:
                 # if there's a result schema, iterate over the stream until we find at least one tool
                 # NOTE: this means we ignore any other tools called here
@@ -912,7 +913,7 @@ class Agent(Generic[AgentDeps, ResultData]):
                     if isinstance(r, BaseException) and not isinstance(r, _exceptions.StopAgentRun)
                 ]
                 if failures:
-                    raise failures[0]  # TODO: raise an exceptiongroup if there are more than 1?
+                    raise failures[0]  # TODO: raise an exceptiongroup if there is more than 1?
 
                 messages = [r for r in task_results if not isinstance(r, BaseException)]
                 stop_runs = [r for r in task_results if isinstance(r, _exceptions.StopAgentRun)]
