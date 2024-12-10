@@ -467,7 +467,8 @@ agent = Agent('test', tools=[ctx_tool], deps_type=int)
     result = mod.agent.run_sync('foobar', deps=5)
     assert result.data == snapshot('{"ctx_tool":5}')
 
-def test_ctx_stop_run():
+
+def test_ctx_stop_run(set_event_loop: None):
     """Ensure the ctx_stop_run_tool is used to complete the agent run."""
     def ctx_stop_run_tool(ctx: RunContext[int]):
         ctx.stop_run(ctx.deps * 'abc')
