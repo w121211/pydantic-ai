@@ -11,6 +11,14 @@ Demonstrates:
 This is done by creating a database containing each section of the markdown documentation, then registering
 the search tool with the PydanticAI agent.
 
+## Example Code
+
+```py title="rag.py"
+#! pydantic_ai_examples/rag.py
+```
+
+## Running the Example
+
 Logic for extracting sections from markdown files and a JSON file with that data is available in
 [this gist](https://gist.github.com/samuelcolvin/4b5bb9bb163b1122ff17e29e48c10992).
 
@@ -40,10 +48,4 @@ You can then ask the agent a question with:
 
 ```bash
 python/uv-run -m pydantic_ai_examples.rag search "How do I configure logfire to work with FastAPI?"
-```
-
-## Example Code
-
-```py title="rag.py"
-#! pydantic_ai_examples/rag.py
 ```

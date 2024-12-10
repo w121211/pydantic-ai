@@ -9,6 +9,12 @@ Demonstrates:
 * [result validation](../results.md#result-validators-functions)
 * [agent dependencies](../dependencies.md)
 
+## Example Code
+
+```py title="sql_gen.py"
+#! pydantic_ai_examples/sql_gen.py
+```
+
 ## Running the Example
 
 The resulting SQL is validated by running it as an `EXPLAIN` query on PostgreSQL. To run the example, you first need to run PostgreSQL, e.g. via Docker:
@@ -31,9 +37,3 @@ python/uv-run -m pydantic_ai_examples.sql_gen "find me errors"
 ```
 
 This model uses `gemini-1.5-flash` by default since Gemini is good at single shot queries of this kind.
-
-## Example Code
-
-```py title="sql_gen.py"
-#! pydantic_ai_examples/sql_gen.py
-```

@@ -6,16 +6,16 @@ Demonstrates:
 
 * [streaming text responses](../results.md#streaming-text)
 
+## Example Code
+
+```py
+#! pydantic_ai_examples/stream_markdown.py
+```
+
 ## Running the Example
 
 With [dependencies installed and environment variables set](./index.md#usage), run:
 
 ```bash
 python/uv-run -m pydantic_ai_examples.stream_markdown
-```
-
-## Example Code
-
-```py
-#! pydantic_ai_examples/stream_markdown.py
 ```

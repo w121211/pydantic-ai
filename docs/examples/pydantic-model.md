@@ -6,6 +6,12 @@ Demonstrates:
 
 * [structured `result_type`](../results.md#structured-result-validation)
 
+## Example Code
+
+```py title="pydantic_model.py"
+#! pydantic_ai_examples/pydantic_model.py
+```
+
 ## Running the Example
 
 With [dependencies installed and environment variables set](./index.md#usage), run:
@@ -22,9 +28,3 @@ PYDANTIC_AI_MODEL=gemini-1.5-pro python/uv-run -m pydantic_ai_examples.pydantic_
 ```
 
 (or `PYDANTIC_AI_MODEL=gemini-1.5-flash ...`)
-
-## Example Code
-
-```py title="pydantic_model.py"
-#! pydantic_ai_examples/pydantic_model.py
-```

@@ -13,18 +13,6 @@ This demonstrates storing chat history between requests and using it to give the
 Most of the complex logic here is between `chat_app.py` which streams the response to the browser,
 and `chat_app.ts` which renders messages in the browser.
 
-## Running the Example
-
-With [dependencies installed and environment variables set](./index.md#usage), run:
-
-```bash
-python/uv-run -m pydantic_ai_examples.chat_app
-```
-
-Then open the app at [localhost:8000](http://localhost:8000).
-
-TODO screenshot.
-
 ## Example Code
 
 Python code that runs the chat app:
@@ -44,3 +32,15 @@ TypeScript to handle rendering the messages, to keep this simple (and at the ris
 ```ts title="chat_app.ts"
 #! pydantic_ai_examples/chat_app.ts
 ```
+
+## Running the Example
+
+With [dependencies installed and environment variables set](./index.md#usage), run:
+
+```bash
+python/uv-run -m pydantic_ai_examples.chat_app
+```
+
+Then open the app at [localhost:8000](http://localhost:8000).
+
+TODO screenshot.

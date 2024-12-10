@@ -7,20 +7,20 @@ Demonstrates:
 This script streams structured responses from GPT-4 about whales, validates the data
 and displays it as a dynamic table using [`rich`](https://github.com/Textualize/rich) as the data is received.
 
-## Running the Example
+## Example Code
 
-With [dependencies installed and environment variables set](./index.md#usage), run:
-
-```bash
-python/uv-run -m pydantic_ai_examples.stream_whales
+```py title="stream_whales.py"
+#! pydantic_ai_examples/stream_whales.py
 ```
 
 Should give an output like this:
 
 {{ video('53dd5e7664c20ae90ed90ae42f606bf3', 25) }}
 
-## Example Code
+## Running the Example
 
-```py title="stream_whales.py"
-#! pydantic_ai_examples/stream_whales.py
+With [dependencies installed and environment variables set](./index.md#usage), run:
+
+```bash
+python/uv-run -m pydantic_ai_examples.stream_whales
 ```
