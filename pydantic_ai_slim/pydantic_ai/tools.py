@@ -45,14 +45,14 @@ class RunContext(Generic[AgentDeps, ResultData]):
     """Number of retries so far."""
     tool_name: str | None = None
     """Name of the tool being called."""
-    tool_id: str | None = None
+    tool_call_id: str | None = None
     """Id of the tool being called."""
 
     def stop_run(self, result: ResultData) -> NoReturn:
         """Stop the call to `agent.run` as soon as possible, using the provided value as the result."""
         # NOTE: this means we ignore any other tools called concurrently
         assert self.tool_name is not None, "Can't call stop_run outside of a tool call"
-        raise _exceptions.StopAgentRun(result, tool_name=self.tool_name, tool_id=self.tool_id)
+        raise _exceptions.StopAgentRun(result, tool_name=self.tool_name, tool_call_id=self.tool_call_id)
 
 
 ToolParams = ParamSpec('ToolParams')
@@ -266,7 +266,7 @@ class Tool(Generic[AgentDeps]):
         return messages.ToolReturn(
             tool_name=message.tool_name,
             content=response_content,
-            tool_id=message.tool_id,
+            tool_call_id=message.tool_call_id,
         )
 
     def _call_args(
@@ -275,7 +275,7 @@ class Tool(Generic[AgentDeps]):
         if self._single_arg_name:
             args_dict = {self._single_arg_name: args_dict}
 
-        args = [RunContext(deps, self.current_retry, message.tool_name, message.tool_id)] if self.takes_ctx else []
+        args = [RunContext(deps, self.current_retry, message.tool_name, message.tool_call_id)] if self.takes_ctx else []
         for positional_field in self._positional_fields:
             args.append(args_dict.pop(positional_field))
         if self._var_positional_field:
@@ -295,7 +295,7 @@ class Tool(Generic[AgentDeps]):
             return messages.RetryPrompt(
                 tool_name=call_message.tool_name,
                 content=content,
-                tool_id=call_message.tool_id,
+                tool_call_id=call_message.tool_call_id,
             )
 
 

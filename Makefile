@@ -63,6 +63,7 @@ testcov: test
 	@uv run coverage html
 
 .PHONY: update-examples  # update documentation examples
+update-examples:
 	uv run -m pytest --update-examples
 
 # `--no-strict` so you can build the docs without insiders packages
