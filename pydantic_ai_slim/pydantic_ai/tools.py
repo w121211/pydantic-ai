@@ -45,11 +45,14 @@ class RunContext(Generic[AgentDeps, ResultData]):
     """Number of retries so far."""
     tool_name: str | None = None
     """Name of the tool being called."""
+    tool_id: str | None = None
+    """Id of the tool being called."""
 
     def stop_run(self, result: ResultData) -> NoReturn:
         """Stop the call to `agent.run` as soon as possible, using the provided value as the result."""
         # NOTE: this means we ignore any other tools called concurrently
-        raise _exceptions.StopAgentRun(result, tool_name=self.tool_name)
+        assert self.tool_name is not None, "Can't call stop_run outside of a tool call"
+        raise _exceptions.StopAgentRun(result, tool_name=self.tool_name, tool_id=self.tool_id)
 
 
 ToolParams = ParamSpec('ToolParams')
@@ -272,7 +275,7 @@ class Tool(Generic[AgentDeps]):
         if self._single_arg_name:
             args_dict = {self._single_arg_name: args_dict}
 
-        args = [RunContext(deps, self.current_retry, message.tool_name)] if self.takes_ctx else []
+        args = [RunContext(deps, self.current_retry, message.tool_name, message.tool_id)] if self.takes_ctx else []
         for positional_field in self._positional_fields:
             args.append(args_dict.pop(positional_field))
         if self._var_positional_field:
