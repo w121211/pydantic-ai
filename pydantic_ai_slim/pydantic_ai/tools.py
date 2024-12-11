@@ -85,7 +85,7 @@ Usage `ResultValidator[AgentDeps, ResultData]`.
 ToolFuncContext = Callable[Concatenate[RunContext[AgentDeps], ToolParams], Any]
 """A tool function that takes `RunContext` as the first argument.
 
-Usage `ToolContextFunc[AgentDeps, ToolParams]`.
+Usage `ToolFuncContext[AgentDeps, ToolParams]`.
 """
 ToolFuncPlain = Callable[ToolParams, Any]
 """A tool function that does not take `RunContext` as the first argument.

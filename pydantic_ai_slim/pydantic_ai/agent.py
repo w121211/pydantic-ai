@@ -897,8 +897,8 @@ class Agent(Generic[AgentDeps, ResultData]):
             messages.extend(tool_messages)
             return _MarkFinalResult(model_response) if stop_run else None, messages
 
-    @staticmethod
     async def _run_tools(
+        self,
         tasks: list[asyncio.Task[_messages.Message]],
     ) -> tuple[list[_messages.Message], _messages.ToolReturn | None]:
         with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]) as span:
@@ -924,7 +924,8 @@ class Agent(Generic[AgentDeps, ResultData]):
             first_tool_return: _messages.ToolReturn | None = None
             for stop_run in stop_runs:
                 tool_return = _messages.ToolReturn(
-                    tool_name=stop_run.tool_name or 'unknown tool',
+                    # TODO: need to unwind the result tool stuff; is it possible to ensure we use the right name?
+                    tool_name=self._result_schema.tool_names()[0],
                     content=stop_run.result,
                     tool_call_id=stop_run.tool_call_id,
                 )
