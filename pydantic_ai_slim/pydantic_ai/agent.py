@@ -7,9 +7,10 @@ from collections.abc import AsyncIterator, Awaitable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from types import FrameType
-from typing import Any, Callable, Generic, Literal, assert_never, cast, final, overload
+from typing import Any, Callable, Generic, Literal, cast, final, overload
 
 import logfire_api
+from typing_extensions import assert_never
 
 from . import (
     _result,
