@@ -975,8 +975,9 @@ class Agent(Generic[AgentDeps, ResultData]):
     ):
         """Process a streamed response from the model.
 
-        Returns either a final result or a tuple of the model response and the tool responses for the next request.
-        If a final result is returned, the conversation should end.
+        Returns:
+            Either a final result or a tuple of the model response and the tool responses for the next request.
+            If a final result is returned, the conversation should end.
         """
         if isinstance(model_response, models.StreamTextResponse):
             # plain string response
