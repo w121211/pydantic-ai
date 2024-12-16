@@ -402,21 +402,32 @@ class Agent(Generic[AgentDeps, ResultData]):
                         model_req_span.__exit__(None, None, None)
 
                         with _logfire.span('handle model response') as handle_span:
-                            result_or_msg, tool_responses = await self._handle_streamed_model_response(
+                            maybe_final_result = await self._handle_streamed_model_response(
                                 model_response, deps, messages
                             )
 
                             # Check if we got a final result
-                            if isinstance(result_or_msg, _MarkFinalResult):
-                                result_stream = result_or_msg.data
+                            if isinstance(maybe_final_result, _MarkFinalResult):
+                                result_stream = maybe_final_result.data
+                                result_tool_name = maybe_final_result.tool_name
                                 handle_span.message = 'handle model response -> final result'
 
-                                def on_complete():
-                                    """Callback which is called when the stream has completed."""
-                                    # the model response will have been added to messages by now
-                                    # by StreamedRunResult._marked_completed
-                                    if tool_responses:
-                                        messages.append(_messages.ModelRequest(tool_responses))
+                                async def on_complete():
+                                    """Called when the stream has completed.
+
+                                    The model response will have been added to messages by now
+                                    by `StreamedRunResult._marked_completed`.
+                                    """
+                                    last_message = messages[-1]
+                                    assert isinstance(last_message, _messages.ModelResponse)
+                                    tool_calls = [
+                                        part for part in last_message.parts if isinstance(part, _messages.ToolCallPart)
+                                    ]
+                                    parts = await self._process_function_tools(
+                                        tool_calls, result_tool_name, deps, messages
+                                    )
+                                    if parts:
+                                        messages.append(_messages.ModelRequest(parts))
                                     run_span.set_attribute('all_messages', messages)
 
                                 yield result.StreamedRunResult(
@@ -427,14 +438,15 @@ class Agent(Generic[AgentDeps, ResultData]):
                                     self._result_schema,
                                     deps,
                                     self._result_validators,
+                                    result_tool_name,
                                     on_complete,
                                 )
                                 return
                             else:
                                 # continue the conversation
-                                if result_or_msg is not None:
-                                    # if we got a model response add that to messages
-                                    messages.append(result_or_msg)
+                                model_response_msg, tool_responses = maybe_final_result
+                                # if we got a model response add that to messages
+                                messages.append(model_response_msg)
                                 if tool_responses:
                                     # if we got one or more tool response parts, add a model request message
                                     messages.append(_messages.ModelRequest(tool_responses))
@@ -854,7 +866,7 @@ class Agent(Generic[AgentDeps, ResultData]):
                 self._incr_result_retry()
                 return None, [e.tool_retry]
             else:
-                return _MarkFinalResult(result_data), []
+                return _MarkFinalResult(result_data, None), []
         else:
             self._incr_result_retry()
             response = _messages.RetryPromptPart(
@@ -868,34 +880,13 @@ class Agent(Generic[AgentDeps, ResultData]):
         """Handle a structured response containing tool calls from the model for non-streaming responses."""
         assert tool_calls, 'Expected at least one tool call'
 
-        # First process any final result tool calls
-        final_result, final_messages = await self._process_final_tool_calls(tool_calls, deps, conv_messages)
-
-        # Then process regular tools based on end strategy
-        if self.end_strategy == 'early' and final_result:
-            tool_parts = self._mark_skipped_function_tools(tool_calls)
-        else:
-            tool_parts = await self._process_function_tools(tool_calls, deps, conv_messages)
-
-        return final_result, [*final_messages, *tool_parts]
-
-    async def _process_final_tool_calls(
-        self, tool_calls: list[_messages.ToolCallPart], deps: AgentDeps, conv_messages: list[_messages.ModelMessage]
-    ) -> tuple[_MarkFinalResult[ResultData] | None, list[_messages.ModelRequestPart]]:
-        """Process any final result tool calls and return the first valid result."""
-        if not self._result_schema:
-            return None, []
+        # first look for the result tool call
+        final_result: _MarkFinalResult[ResultData] | None = None
 
         parts: list[_messages.ModelRequestPart] = []
-        final_result = None
-
-        for call in tool_calls:
-            result_tool = self._result_schema.tools.get(call.tool_name)
-            if not result_tool:
-                continue
-
-            if final_result is None:
-                # This is the first result tool - try to use it
+        if result_schema := self._result_schema:
+            if match := result_schema.find_tool(tool_calls):
+                call, result_tool = match
                 try:
                     result_data = result_tool.validate(call)
                     result_data = await self._validate_result(result_data, deps, call, conv_messages)
@@ -903,37 +894,66 @@ class Agent(Generic[AgentDeps, ResultData]):
                     self._incr_result_retry()
                     parts.append(e.tool_retry)
                 else:
-                    final_result = _MarkFinalResult(result_data)
-                    parts.append(
-                        _messages.ToolReturnPart(
-                            tool_name=call.tool_name,
-                            content='Final result processed.',
-                            tool_call_id=call.tool_call_id,
-                        )
-                    )
-            else:
-                # We already have a final result - mark this one as unused
-                parts.append(
-                    _messages.ToolReturnPart(
-                        tool_name=call.tool_name,
-                        content='Result tool not used - a final result was already processed.',
-                        tool_call_id=call.tool_call_id,
-                    )
-                )
+                    final_result = _MarkFinalResult(result_data, call.tool_name)
+
+        # Then build the other request parts based on end strategy
+        parts += await self._process_function_tools(
+            tool_calls, final_result and final_result.tool_name, deps, conv_messages
+        )
 
         return final_result, parts
 
     async def _process_function_tools(
-        self, tool_calls: list[_messages.ToolCallPart], deps: AgentDeps, conv_messages: list[_messages.ModelMessage]
+        self,
+        tool_calls: list[_messages.ToolCallPart],
+        result_tool_name: str | None,
+        deps: AgentDeps,
+        conv_messages: list[_messages.ModelMessage],
     ) -> list[_messages.ModelRequestPart]:
-        """Process function (non-final) tool calls in parallel."""
+        """Process function (non-result) tool calls in parallel.
+
+        Also add stub return parts for any other tools that need it.
+        """
         parts: list[_messages.ModelRequestPart] = []
         tasks: list[asyncio.Task[_messages.ModelRequestPart]] = []
 
+        stub_function_tools = bool(result_tool_name) and self.end_strategy == 'early'
+
+        # we rely on the fact that if we found a result, it's the first result tool in the last
+        found_used_result_tool = False
         for call in tool_calls:
-            if tool := self._function_tools.get(call.tool_name):
-                tasks.append(asyncio.create_task(tool.run(deps, call, conv_messages), name=call.tool_name))
-            elif self._result_schema is None or call.tool_name not in self._result_schema.tools:
+            if call.tool_name == result_tool_name and not found_used_result_tool:
+                found_used_result_tool = True
+                parts.append(
+                    _messages.ToolReturnPart(
+                        tool_name=call.tool_name,
+                        content='Final result processed.',
+                        tool_call_id=call.tool_call_id,
+                    )
+                )
+            elif tool := self._function_tools.get(call.tool_name):
+                if stub_function_tools:
+                    parts.append(
+                        _messages.ToolReturnPart(
+                            tool_name=call.tool_name,
+                            content='Tool not executed - a final result was already processed.',
+                            tool_call_id=call.tool_call_id,
+                        )
+                    )
+                else:
+                    tasks.append(asyncio.create_task(tool.run(deps, call, conv_messages), name=call.tool_name))
+            elif self._result_schema is not None and call.tool_name in self._result_schema.tools:
+                # if tool_name is in _result_schema, it means we found a result tool but an error occurred in
+                # validation, we don't add another part here
+                if result_tool_name is not None:
+                    parts.append(
+                        _messages.ToolReturnPart(
+                            tool_name=call.tool_name,
+                            content='Result tool not used - a final result was already processed.',
+                            tool_call_id=call.tool_call_id,
+                        )
+                    )
+            else:
                 parts.append(self._unknown_tool(call.tool_name))
 
         # Run all tool tasks in parallel
@@ -941,28 +961,6 @@ class Agent(Generic[AgentDeps, ResultData]):
             with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]):
                 task_results: Sequence[_messages.ModelRequestPart] = await asyncio.gather(*tasks)
                 parts.extend(task_results)
-
-        return parts
-
-    def _mark_skipped_function_tools(
-        self,
-        tool_calls: list[_messages.ToolCallPart],
-    ) -> list[_messages.ModelRequestPart]:
-        """Mark function tools as skipped when a final result was found with 'early' end strategy."""
-        parts: list[_messages.ModelRequestPart] = []
-
-        for call in tool_calls:
-            if call.tool_name in self._function_tools:
-                parts.append(
-                    _messages.ToolReturnPart(
-                        tool_name=call.tool_name,
-                        content='Tool not executed - a final result was already processed.',
-                        tool_call_id=call.tool_call_id,
-                    )
-                )
-            elif self._result_schema is None or call.tool_name not in self._result_schema.tools:
-                parts.append(self._unknown_tool(call.tool_name))
-
         return parts
 
     async def _handle_streamed_model_response(
@@ -970,19 +968,19 @@ class Agent(Generic[AgentDeps, ResultData]):
         model_response: models.EitherStreamedResponse,
         deps: AgentDeps,
         conv_messages: list[_messages.ModelMessage],
-    ) -> tuple[
-        _MarkFinalResult[models.EitherStreamedResponse] | _messages.ModelResponse | None,
-        list[_messages.ModelRequestPart],
-    ]:
+    ) -> (
+        _MarkFinalResult[models.EitherStreamedResponse]
+        | tuple[_messages.ModelResponse, list[_messages.ModelRequestPart]]
+    ):
         """Process a streamed response from the model.
 
-        Returns:
-            If the first value is a final_result, the conversation should end.
+        Returns either a final result or a tuple of the model response and the tool responses for the next request.
+        If a final result is returned, the conversation should end.
         """
         if isinstance(model_response, models.StreamTextResponse):
             # plain string response
             if self._allow_text_result:
-                return _MarkFinalResult(model_response), []
+                return _MarkFinalResult(model_response, None)
             else:
                 self._incr_result_retry()
                 response = _messages.RetryPromptPart(
@@ -992,7 +990,8 @@ class Agent(Generic[AgentDeps, ResultData]):
                 async for _ in model_response:
                     pass
 
-                return None, [response]
+                text = ''.join(model_response.get(final=True))
+                return _messages.ModelResponse([_messages.TextPart(text)]), [response]
         elif isinstance(model_response, models.StreamStructuredResponse):
             if self._result_schema is not None:
                 # if there's a result schema, iterate over the stream until we find at least one tool
@@ -1005,14 +1004,9 @@ class Agent(Generic[AgentDeps, ResultData]):
                         break
                     structured_msg = model_response.get()
 
-                if match := self._result_schema.find_tool(structured_msg):
+                if match := self._result_schema.find_tool(structured_msg.parts):
                     call, _ = match
-                    tool_return = _messages.ToolReturnPart(
-                        tool_name=call.tool_name,
-                        content='Final result processed.',
-                        tool_call_id=call.tool_call_id,
-                    )
-                    return _MarkFinalResult(model_response), [tool_return]
+                    return _MarkFinalResult(model_response, call.tool_name)
 
             # the model is calling a tool function, consume the response to get the next message
             async for _ in model_response:
@@ -1120,3 +1114,6 @@ class _MarkFinalResult(Generic[ResultData]):
     """
 
     data: ResultData
+    """The final result data."""
+    tool_name: str | None
+    """Name of the final result tool, None if the result is a string."""
