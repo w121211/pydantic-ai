@@ -214,15 +214,6 @@ async def test_call_tool():
                 ModelRequest(
                     parts=[ToolReturnPart(tool_name='ret_a', content='hello world', timestamp=IsNow(tz=timezone.utc))]
                 ),
-                ModelRequest(
-                    parts=[
-                        ToolReturnPart(
-                            tool_name='final_result',
-                            content='Final result processed.',
-                            timestamp=IsNow(tz=timezone.utc),
-                        )
-                    ]
-                ),
             ]
         )
         assert await result.get_data() == snapshot(('hello world', 2))
@@ -236,15 +227,6 @@ async def test_call_tool():
                 ModelRequest(
                     parts=[ToolReturnPart(tool_name='ret_a', content='hello world', timestamp=IsNow(tz=timezone.utc))]
                 ),
-                ModelRequest(
-                    parts=[
-                        ToolReturnPart(
-                            tool_name='final_result',
-                            content='Final result processed.',
-                            timestamp=IsNow(tz=timezone.utc),
-                        )
-                    ]
-                ),
                 ModelResponse(
                     parts=[
                         ToolCallPart(
@@ -253,6 +235,15 @@ async def test_call_tool():
                         )
                     ],
                     timestamp=IsNow(tz=timezone.utc),
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name='final_result',
+                            content='Final result processed.',
+                            timestamp=IsNow(tz=timezone.utc),
+                        )
+                    ]
                 ),
             ]
         )

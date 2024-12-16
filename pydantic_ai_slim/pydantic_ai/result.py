@@ -122,7 +122,7 @@ class StreamedRunResult(_BaseRunResult[ResultData], Generic[AgentDeps, ResultDat
     _result_schema: _result.ResultSchema[ResultData] | None
     _deps: AgentDeps
     _result_validators: list[_result.ResultValidator[AgentDeps, ResultData]]
-    _on_complete: Callable[[list[_messages.ModelMessage]], None]
+    _on_complete: Callable[[], None]
     is_complete: bool = field(default=False, init=False)
     """Whether the stream has all been received.
 
@@ -309,4 +309,4 @@ class StreamedRunResult(_BaseRunResult[ResultData], Generic[AgentDeps, ResultDat
     def _marked_completed(self, message: _messages.ModelResponse) -> None:
         self.is_complete = True
         self._all_messages.append(message)
-        self._on_complete(self._all_messages)
+        self._on_complete()

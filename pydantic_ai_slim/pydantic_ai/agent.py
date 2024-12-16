@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from types import FrameType
-from typing import Any, Callable, Generic, Literal, cast, final, overload
+from typing import Any, Callable, Generic, Literal, assert_never, cast, final, overload
 
 import logfire_api
 
@@ -272,8 +272,8 @@ class Agent(Generic[AgentDeps, ResultData]):
                     else:
                         # continue the conversation
                         handle_span.set_attribute('tool_responses', tool_responses)
-                        tool_responses = ' '.join(r.part_kind for r in tool_responses)
-                        handle_span.message = f'handle model response -> {tool_responses}'
+                        tool_responses_str = ' '.join(r.part_kind for r in tool_responses)
+                        handle_span.message = f'handle model response -> {tool_responses_str}'
 
     def run_sync(
         self,
@@ -287,7 +287,8 @@ class Agent(Generic[AgentDeps, ResultData]):
     ) -> result.RunResult[ResultData]:
         """Run the agent with a user prompt synchronously.
 
-        This is a convenience method that wraps `self.run` with `loop.run_until_complete()`.
+        This is a convenience method that wraps [`self.run`][pydantic_ai.Agent.run] with `loop.run_until_complete(...)`.
+        You therefore can't use this method inside async code or if there's an active event loop.
 
         Example:
         ```python
@@ -314,8 +315,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         """
         if infer_name and self.name is None:
             self._infer_name(inspect.currentframe())
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(
+        return asyncio.get_event_loop().run_until_complete(
             self.run(
                 user_prompt,
                 message_history=message_history,
@@ -402,19 +402,23 @@ class Agent(Generic[AgentDeps, ResultData]):
                         model_req_span.__exit__(None, None, None)
 
                         with _logfire.span('handle model response') as handle_span:
-                            final_result, new_messages = await self._handle_streamed_model_response(
+                            result_or_msg, tool_responses = await self._handle_streamed_model_response(
                                 model_response, deps, messages
                             )
 
-                            # Add all messages to the conversation
-                            messages.extend(new_messages)
-
                             # Check if we got a final result
-                            if final_result is not None:
-                                result_stream = final_result.data
-                                run_span.set_attribute('all_messages', messages)
-                                handle_span.set_attribute('result_type', result_stream.__class__.__name__)
+                            if isinstance(result_or_msg, _MarkFinalResult):
+                                result_stream = result_or_msg.data
                                 handle_span.message = 'handle model response -> final result'
+
+                                def on_complete():
+                                    """Callback which is called when the stream has completed."""
+                                    # the model response will have been added to messages by now
+                                    # by StreamedRunResult._marked_completed
+                                    if tool_responses:
+                                        messages.append(_messages.ModelRequest(tool_responses))
+                                    run_span.set_attribute('all_messages', messages)
+
                                 yield result.StreamedRunResult(
                                     messages,
                                     new_message_index,
@@ -423,17 +427,21 @@ class Agent(Generic[AgentDeps, ResultData]):
                                     self._result_schema,
                                     deps,
                                     self._result_validators,
-                                    lambda m: run_span.set_attribute('all_messages', messages),
+                                    on_complete,
                                 )
                                 return
                             else:
                                 # continue the conversation
-                                # the last new message should always be a model request
-                                tool_response_msg = new_messages[-1]
-                                assert isinstance(tool_response_msg, _messages.ModelRequest)
-                                handle_span.set_attribute('tool_responses', tool_response_msg.parts)
-                                tool_responses = ' '.join(r.part_kind for r in tool_response_msg.parts)
-                                handle_span.message = f'handle model response -> {tool_responses}'
+                                if result_or_msg is not None:
+                                    # if we got a model response add that to messages
+                                    messages.append(result_or_msg)
+                                if tool_responses:
+                                    # if we got one or more tool response parts, add a model request message
+                                    messages.append(_messages.ModelRequest(tool_responses))
+
+                                handle_span.set_attribute('tool_responses', tool_responses)
+                                tool_responses_str = ' '.join(r.part_kind for r in tool_responses)
+                                handle_span.message = f'handle model response -> {tool_responses_str}'
                                 # the model_response should have been fully streamed by now, we can add it's cost
                                 cost += model_response.cost()
 
@@ -962,11 +970,14 @@ class Agent(Generic[AgentDeps, ResultData]):
         model_response: models.EitherStreamedResponse,
         deps: AgentDeps,
         conv_messages: list[_messages.ModelMessage],
-    ) -> tuple[_MarkFinalResult[models.EitherStreamedResponse] | None, list[_messages.ModelMessage]]:
+    ) -> tuple[
+        _MarkFinalResult[models.EitherStreamedResponse] | _messages.ModelResponse | None,
+        list[_messages.ModelRequestPart],
+    ]:
         """Process a streamed response from the model.
 
         Returns:
-            A tuple of (final_result, messages). If final_result is not None, the conversation should end.
+            If the first value is a final_result, the conversation should end.
         """
         if isinstance(model_response, models.StreamTextResponse):
             # plain string response
@@ -981,9 +992,8 @@ class Agent(Generic[AgentDeps, ResultData]):
                 async for _ in model_response:
                     pass
 
-                return None, [_messages.ModelRequest([response])]
-        else:
-            assert isinstance(model_response, models.StreamStructuredResponse), f'Unexpected response: {model_response}'
+                return None, [response]
+        elif isinstance(model_response, models.StreamStructuredResponse):
             if self._result_schema is not None:
                 # if there's a result schema, iterate over the stream until we find at least one tool
                 # NOTE: this means we ignore any other tools called here
@@ -1002,7 +1012,7 @@ class Agent(Generic[AgentDeps, ResultData]):
                         content='Final result processed.',
                         tool_call_id=call.tool_call_id,
                     )
-                    return _MarkFinalResult(model_response), [_messages.ModelRequest([tool_return])]
+                    return _MarkFinalResult(model_response), [tool_return]
 
             # the model is calling a tool function, consume the response to get the next message
             async for _ in model_response:
@@ -1010,7 +1020,6 @@ class Agent(Generic[AgentDeps, ResultData]):
             model_response_msg = model_response.get()
             if not model_response_msg.parts:
                 raise exceptions.UnexpectedModelBehavior('Received empty tool call message')
-            messages: list[_messages.ModelMessage] = [model_response_msg]
 
             # we now run all tool functions in parallel
             tasks: list[asyncio.Task[_messages.ModelRequestPart]] = []
@@ -1026,8 +1035,9 @@ class Agent(Generic[AgentDeps, ResultData]):
             with _logfire.span('running {tools=}', tools=[t.get_name() for t in tasks]):
                 task_results: Sequence[_messages.ModelRequestPart] = await asyncio.gather(*tasks)
                 parts.extend(task_results)
-            messages.append(_messages.ModelRequest(parts))
-            return None, messages
+            return model_response_msg, parts
+        else:
+            assert_never(model_response)
 
     async def _validate_result(
         self,
