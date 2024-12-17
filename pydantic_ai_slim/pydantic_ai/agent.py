@@ -191,6 +191,8 @@ class Agent(Generic[AgentDeps, ResultData]):
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
         model_settings: ModelSettings | None = None,
+        message_limit: int | None = None,
+        token_limit: int | None = None,
         infer_name: bool = True,
     ) -> result.RunResult[ResultData]:
         """Run the agent with a user prompt in async mode.
@@ -211,8 +213,10 @@ class Agent(Generic[AgentDeps, ResultData]):
             message_history: History of the conversation so far.
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
-            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
             model_settings: Optional settings to use for this model's request.
+            message_limit: Optional limit on the number of messages in the conversation.
+            token_limit: Optional limit on the number of tokens used in the conversation.
+            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
             The result of the run.
@@ -284,6 +288,8 @@ class Agent(Generic[AgentDeps, ResultData]):
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
         model_settings: ModelSettings | None = None,
+        message_limit: int | None = None,
+        token_limit: int | None = None,
         infer_name: bool = True,
     ) -> result.RunResult[ResultData]:
         """Run the agent with a user prompt synchronously.
@@ -308,8 +314,10 @@ class Agent(Generic[AgentDeps, ResultData]):
             message_history: History of the conversation so far.
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
-            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
             model_settings: Optional settings to use for this model's request.
+            message_limit: Optional limit on the number of messages in the conversation.
+            token_limit: Optional limit on the number of tokens used in the conversation.
+            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
             The result of the run.
@@ -336,6 +344,8 @@ class Agent(Generic[AgentDeps, ResultData]):
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
         model_settings: ModelSettings | None = None,
+        message_limit: int | None = None,
+        token_limit: int | None = None,
         infer_name: bool = True,
     ) -> AsyncIterator[result.StreamedRunResult[AgentDeps, ResultData]]:
         """Run the agent with a user prompt in async mode, returning a streamed response.
@@ -357,8 +367,10 @@ class Agent(Generic[AgentDeps, ResultData]):
             message_history: History of the conversation so far.
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
-            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
             model_settings: Optional settings to use for this model's request.
+            message_limit: Optional limit on the number of messages in the conversation.
+            token_limit: Optional limit on the number of tokens used in the conversation.
+            infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
             The result of the run.
