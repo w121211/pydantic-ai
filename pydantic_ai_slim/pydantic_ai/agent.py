@@ -22,7 +22,7 @@ from . import (
     result,
 )
 from .result import ResultData
-from .settings import ModelSettings, merge_model_settings
+from .settings import ExecutionLimitSettings, ModelSettings, merge_model_settings
 from .tools import (
     AgentDeps,
     RunContext,
@@ -191,8 +191,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
         model_settings: ModelSettings | None = None,
-        message_limit: int | None = None,
-        token_limit: int | None = None,
+        execution_limit_settings: ExecutionLimitSettings | None = None,
         infer_name: bool = True,
     ) -> result.RunResult[ResultData]:
         """Run the agent with a user prompt in async mode.
@@ -214,8 +213,7 @@ class Agent(Generic[AgentDeps, ResultData]):
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
             model_settings: Optional settings to use for this model's request.
-            message_limit: Optional limit on the number of messages in the conversation.
-            token_limit: Optional limit on the number of tokens used in the conversation.
+            execution_limit_settings: Optional settings to use in order to limit model request or cost (token usage).
             infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
@@ -242,8 +240,8 @@ class Agent(Generic[AgentDeps, ResultData]):
                 tool.current_retry = 0
 
             cost = result.Cost()
-
             model_settings = merge_model_settings(self.model_settings, model_settings)
+            execution_limit_settings = execution_limit_settings or ExecutionLimitSettings(request_limit=50)
 
             run_step = 0
             while True:
@@ -258,6 +256,8 @@ class Agent(Generic[AgentDeps, ResultData]):
 
                 messages.append(model_response)
                 cost += request_cost
+                # TODO: is this the right location? Should we move this earlier in the logic?
+                execution_limit_settings.increment(request_cost)
 
                 with _logfire.span('handle model response', run_step=run_step) as handle_span:
                     final_result, tool_responses = await self._handle_model_response(model_response, deps, messages)
@@ -288,8 +288,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
         model_settings: ModelSettings | None = None,
-        message_limit: int | None = None,
-        token_limit: int | None = None,
+        execution_limit_settings: ExecutionLimitSettings | None = None,
         infer_name: bool = True,
     ) -> result.RunResult[ResultData]:
         """Run the agent with a user prompt synchronously.
@@ -315,8 +314,7 @@ class Agent(Generic[AgentDeps, ResultData]):
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
             model_settings: Optional settings to use for this model's request.
-            message_limit: Optional limit on the number of messages in the conversation.
-            token_limit: Optional limit on the number of tokens used in the conversation.
+            execution_limit_settings: Optional settings to use in order to limit model request or cost (token usage).
             infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
@@ -330,8 +328,9 @@ class Agent(Generic[AgentDeps, ResultData]):
                 message_history=message_history,
                 model=model,
                 deps=deps,
-                infer_name=False,
+                execution_limit_settings=execution_limit_settings,
                 model_settings=model_settings,
+                infer_name=False,
             )
         )
 
@@ -344,8 +343,7 @@ class Agent(Generic[AgentDeps, ResultData]):
         model: models.Model | models.KnownModelName | None = None,
         deps: AgentDeps = None,
         model_settings: ModelSettings | None = None,
-        message_limit: int | None = None,
-        token_limit: int | None = None,
+        execution_limit_settings: ExecutionLimitSettings | None = None,
         infer_name: bool = True,
     ) -> AsyncIterator[result.StreamedRunResult[AgentDeps, ResultData]]:
         """Run the agent with a user prompt in async mode, returning a streamed response.
@@ -368,8 +366,7 @@ class Agent(Generic[AgentDeps, ResultData]):
             model: Optional model to use for this run, required if `model` was not set when creating the agent.
             deps: Optional dependencies to use for this run.
             model_settings: Optional settings to use for this model's request.
-            message_limit: Optional limit on the number of messages in the conversation.
-            token_limit: Optional limit on the number of tokens used in the conversation.
+            execution_limit_settings: Optional settings to use in order to limit model request or cost (token usage).
             infer_name: Whether to try to infer the agent name from the call frame if it's not set.
 
         Returns:
@@ -399,6 +396,7 @@ class Agent(Generic[AgentDeps, ResultData]):
 
             cost = result.Cost()
             model_settings = merge_model_settings(self.model_settings, model_settings)
+            execution_limit_settings = execution_limit_settings or ExecutionLimitSettings(request_limit=50)
 
             run_step = 0
             while True:
@@ -468,7 +466,9 @@ class Agent(Generic[AgentDeps, ResultData]):
                                 tool_responses_str = ' '.join(r.part_kind for r in tool_responses)
                                 handle_span.message = f'handle model response -> {tool_responses_str}'
                                 # the model_response should have been fully streamed by now, we can add it's cost
-                                cost += model_response.cost()
+                                model_response_cost = model_response.cost()
+                                execution_limit_settings.increment(model_response_cost)
+                                cost += model_response_cost
 
     @contextmanager
     def override(

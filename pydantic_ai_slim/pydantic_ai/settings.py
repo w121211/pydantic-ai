@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
 from httpx import Timeout
 from typing_extensions import TypedDict
+
+from .exceptions import UnexpectedModelBehavior
+
+if TYPE_CHECKING:
+    from .result import Cost
 
 
 class ModelSettings(TypedDict, total=False):
@@ -70,3 +78,35 @@ def merge_model_settings(base: ModelSettings | None, overrides: ModelSettings | 
         return base | overrides
     else:
         return base or overrides
+
+
+@dataclass
+class ExecutionLimitSettings:
+    """Settings to configure an agent run."""
+
+    request_limit: int | None = None
+    request_tokens_limit: int | None = None
+    response_tokens_limit: int | None = None
+    total_tokens_limit: int | None = None
+
+    _request_count: int = 0
+    _request_tokens_count: int = 0
+    _response_tokens_count: int = 0
+    _total_tokens_count: int = 0
+
+    def increment(self, cost: Cost) -> None:
+        self._request_count += 1
+        self._check_limit(self.request_limit, self._request_count, 'request count')
+
+        self._request_tokens_count += cost.request_tokens or 0
+        self._check_limit(self.request_tokens_limit, self._request_tokens_count, 'request tokens count')
+
+        self._response_tokens_count += cost.response_tokens or 0
+        self._check_limit(self.response_tokens_limit, self._response_tokens_count, 'response tokens count')
+
+        self._total_tokens_count += cost.total_tokens or 0
+        self._check_limit(self.total_tokens_limit, self._total_tokens_count, 'total tokens count')
+
+    def _check_limit(self, limit: int | None, count: int, limit_name: str) -> None:
+        if limit and limit < count:
+            raise UnexpectedModelBehavior(f'Exceeded {limit_name} limit of {limit} by {count - limit}')
