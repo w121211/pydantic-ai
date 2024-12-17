@@ -188,7 +188,6 @@ async def test_call_tool():
         else:
             last = messages[-1]
             assert isinstance(last, ModelRequest)
-            print('\n', last.parts, '\n')
             assert isinstance(last.parts[0], ToolReturnPart)
             assert agent_info.result_tools is not None
             assert len(agent_info.result_tools) == 1
