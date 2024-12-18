@@ -149,6 +149,8 @@ class StreamedRunResult(_BaseRunResult[ResultData], Generic[AgentDeps, ResultDat
         Returns:
             An async iterable of the response data.
         """
+        # TODO: Drop the following isinstance and use stream_structured even for text (and make that work)
+        #   Rename stream_structured to stream_responses or similar (the idea is just that you aren't getting diffs)
         if isinstance(self._stream_response, models.StreamTextResponse):
             async for text in self.stream_text(debounce_by=debounce_by):
                 yield cast(ResultData, text)

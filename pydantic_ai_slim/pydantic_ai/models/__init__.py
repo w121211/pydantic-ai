@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Literal, Union
 import httpx
 
 from ..exceptions import UserError
-from ..messages import ModelMessage, ModelResponse
+from ..messages import ModelMessage, ModelResponse, ModelResponseStreamEvent
 from ..settings import ModelSettings
 
 if TYPE_CHECKING:
@@ -180,7 +180,7 @@ class StreamTextResponse(ABC):
 class StreamStructuredResponse(ABC):
     """Streamed response from an LLM when calling a tool."""
 
-    def __aiter__(self) -> AsyncIterator[None]:
+    def __aiter__(self) -> AsyncIterator[ModelResponseStreamEvent | None]:  # TODO: Should we drop the None? I think so
         """Stream the response as an async iterable, building up the tool call as it goes.
 
         This is an async iterator that yields `None` to avoid doing the work of building the final tool call when
@@ -189,7 +189,7 @@ class StreamStructuredResponse(ABC):
         return self
 
     @abstractmethod
-    async def __anext__(self) -> None:
+    async def __anext__(self) -> ModelResponseStreamEvent | None:  # TODO: Should we drop the None? I think so
         """Process the next chunk of the response, see above for why this returns `None`."""
         raise NotImplementedError()
 
