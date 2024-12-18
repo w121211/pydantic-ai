@@ -36,8 +36,7 @@ from ..tools import ToolDefinition
 from . import (
     AgentModel,
     Model,
-    StreamStructuredResponse,
-    StreamTextResponse,
+    StreamedResponse,
     cached_async_http_client,
     check_allow_model_requests,
 )
@@ -166,10 +165,10 @@ class OpenAIAgentModel(AgentModel):
     @asynccontextmanager
     async def request_stream_structured(
         self, messages: list[ModelMessage], model_settings: ModelSettings | None
-    ) -> AsyncIterator[StreamStructuredResponse]:
+    ) -> AsyncIterator[StreamedResponse]:
         response = await self._completions_create(messages, True, model_settings)
         async with response:
-            yield OpenAIStreamStructuredResponse(response)
+            yield OpenAIStreamedResponse(response)
 
     @overload
     async def _completions_create(
@@ -320,8 +319,8 @@ _CONTENT_INDEX = 0
 
 
 @dataclass
-class OpenAIStreamStructuredResponse(StreamStructuredResponse):
-    """Implementation of `StreamStructuredResponse` for OpenAI models."""
+class OpenAIStreamedResponse(StreamedResponse):
+    """Implementation of `StreamedResponse` for OpenAI models."""
 
     _response: AsyncStream[ChatCompletionChunk]
 

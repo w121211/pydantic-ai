@@ -282,6 +282,7 @@ class PartDeltaEvent:
 @dataclass
 class PartStopEvent:
     index: int
+    part: ModelResponsePart
     event_kind: Literal['part_stop'] = 'part_stop'
 
 
