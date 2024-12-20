@@ -76,6 +76,7 @@ class OpenAIModel(Model):
         api_key: str | None = None,
         openai_client: AsyncOpenAI | None = None,
         http_client: AsyncHTTPClient | None = None,
+        system_role: Literal['system', 'user', 'assistant', 'disabled'] = 'system',
     ):
         """Initialize an OpenAI model.
 
@@ -91,8 +92,12 @@ class OpenAIModel(Model):
                 [`AsyncOpenAI`](https://github.com/openai/openai-python?tab=readme-ov-file#async-usage)
                 client to use. If provided, `base_url`, `api_key`, and `http_client` must be `None`.
             http_client: An existing `httpx.AsyncClient` to use for making HTTP requests.
+            system_role: The role to use for SystemPromptPart messages. Defaults to `'system'`.
+                OpenAI's o1 model does not support messages with role 'system', so you may want to change it to 'user'.
+                You also have the option to change it to `'assistant'`, or `'disabled'` to ignore system messages.
         """
         self.model_name: OpenAIModelName = model_name
+        self.system_role: Literal['system', 'user', 'assistant', 'disabled'] = system_role
         if openai_client is not None:
             assert http_client is None, 'Cannot provide both `openai_client` and `http_client`'
             assert base_url is None, 'Cannot provide both `openai_client` and `base_url`'
@@ -114,12 +119,7 @@ class OpenAIModel(Model):
         tools = [self._map_tool_definition(r) for r in function_tools]
         if result_tools:
             tools += [self._map_tool_definition(r) for r in result_tools]
-        return OpenAIAgentModel(
-            self.client,
-            self.model_name,
-            allow_text_result,
-            tools,
-        )
+        return OpenAIAgentModel(self.client, self.model_name, allow_text_result, tools, system_role=self.system_role)
 
     def name(self) -> str:
         return f'openai:{self.model_name}'
@@ -144,6 +144,7 @@ class OpenAIAgentModel(AgentModel):
     model_name: OpenAIModelName
     allow_text_result: bool
     tools: list[chat.ChatCompletionToolParam]
+    system_role: Literal['system', 'user', 'assistant', 'disabled']
 
     async def request(
         self, messages: list[ModelMessage], model_settings: ModelSettings | None
@@ -270,15 +271,19 @@ class OpenAIAgentModel(AgentModel):
 
     def _map_model_request(self, message: ModelRequest) -> Iterable[chat.ChatCompletionMessageParam]:
         for part in message.parts:
-            yield self._map_model_request_part(part)
+            if part := self._map_model_request_part(part):
+                yield part
 
-    def _map_model_request_part(self, part: ModelRequestPart) -> chat.ChatCompletionMessageParam:
+    def _map_model_request_part(self, part: ModelRequestPart) -> chat.ChatCompletionMessageParam | None:
         if isinstance(part, SystemPromptPart):
-            if self.model_name.startswith('o1'):
-                # o1 does not currently support role 'system', so for now we use role 'user' instead
-                return chat.ChatCompletionUserMessageParam(role='user', content=part.content)
-            else:
+            if self.system_role == 'system':
                 return chat.ChatCompletionSystemMessageParam(role='system', content=part.content)
+            elif self.system_role == 'user':
+                return chat.ChatCompletionUserMessageParam(role='user', content=part.content)
+            elif self.system_role == 'assistant':
+                return chat.ChatCompletionAssistantMessageParam(role='assistant', content=part.content)
+            elif self.system_role == 'disabled':
+                return None
         elif isinstance(part, UserPromptPart):
             return chat.ChatCompletionUserMessageParam(role='user', content=part.content)
         elif isinstance(part, ToolReturnPart):
