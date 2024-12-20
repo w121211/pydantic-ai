@@ -95,9 +95,9 @@ class OpenAIModel(Model):
             http_client: An existing `httpx.AsyncClient` to use for making HTTP requests.
             system_role: The role to use for SystemPromptPart messages. OpenAI's o1 models currently do not support
                 messages with role 'system', so if this argument is left as `None`, we default the behavior to using
-                'user' as the role for o1 models, and 'system' for all others. If you pass 'system', 'user', or
-                'assistant', that role will be used. You also have the option to pass `'disabled'` to disable sending
-                of system messages.
+                'user' as the role for o1 models, and 'system' for all others. However, if you pass 'system', 'user', or
+                'assistant', that role will always be used for system prompts. You also have the option to pass
+                'disabled' to disable sending of system messages entirely.
         """
         self.model_name: OpenAIModelName = model_name
         self.system_role: Literal['system', 'user', 'assistant', 'disabled']
