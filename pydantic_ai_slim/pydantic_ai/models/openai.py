@@ -66,6 +66,7 @@ class OpenAIModel(Model):
     """
 
     model_name: OpenAIModelName
+    system_role: Literal['system', 'user', 'assistant', 'disabled']
     client: AsyncOpenAI = field(repr=False)
 
     def __init__(
@@ -76,7 +77,7 @@ class OpenAIModel(Model):
         api_key: str | None = None,
         openai_client: AsyncOpenAI | None = None,
         http_client: AsyncHTTPClient | None = None,
-        system_role: Literal['system', 'user', 'assistant', 'disabled'] = 'system',
+        system_role: Literal['system', 'user', 'assistant', 'disabled', None] = None,
     ):
         """Initialize an OpenAI model.
 
@@ -92,12 +93,20 @@ class OpenAIModel(Model):
                 [`AsyncOpenAI`](https://github.com/openai/openai-python?tab=readme-ov-file#async-usage)
                 client to use. If provided, `base_url`, `api_key`, and `http_client` must be `None`.
             http_client: An existing `httpx.AsyncClient` to use for making HTTP requests.
-            system_role: The role to use for SystemPromptPart messages. Defaults to `'system'`.
-                OpenAI's o1 model does not support messages with role 'system', so you may want to change it to 'user'.
-                You also have the option to change it to `'assistant'`, or `'disabled'` to ignore system messages.
+            system_role: The role to use for SystemPromptPart messages. OpenAI's o1 models currently do not support
+                messages with role 'system', so if this argument is left as `None`, we default the behavior to using
+                'user' as the role for o1 models, and 'system' for all others. If you pass 'system', 'user', or
+                'assistant', that role will be used. You also have the option to pass `'disabled'` to disable sending
+                of system messages.
         """
         self.model_name: OpenAIModelName = model_name
-        self.system_role: Literal['system', 'user', 'assistant', 'disabled'] = system_role
+        self.system_role: Literal['system', 'user', 'assistant', 'disabled']
+
+        if system_role is None:
+            self.system_role = 'user' if model_name.startswith('o1') else 'system'
+        else:
+            self.system_role = system_role
+
         if openai_client is not None:
             assert http_client is None, 'Cannot provide both `openai_client` and `http_client`'
             assert base_url is None, 'Cannot provide both `openai_client` and `base_url`'
