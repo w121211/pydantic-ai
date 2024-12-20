@@ -15,6 +15,7 @@ from .._utils import guard_tool_call_id as _guard_tool_call_id
 from ..messages import (
     ModelMessage,
     ModelRequest,
+    ModelRequestPart,
     ModelResponse,
     ModelResponsePart,
     RetryPromptPart,
@@ -242,11 +243,10 @@ class OpenAIAgentModel(AgentModel):
                     )
                 # else continue until we get either delta.content or delta.tool_calls
 
-    @classmethod
-    def _map_message(cls, message: ModelMessage) -> Iterable[chat.ChatCompletionMessageParam]:
+    def _map_message(self, message: ModelMessage) -> Iterable[chat.ChatCompletionMessageParam]:
         """Just maps a `pydantic_ai.Message` to a `openai.types.ChatCompletionMessageParam`."""
         if isinstance(message, ModelRequest):
-            yield from cls._map_user_message(message)
+            yield from self._map_model_request(message)
         elif isinstance(message, ModelResponse):
             texts: list[str] = []
             tool_calls: list[chat.ChatCompletionMessageToolCallParam] = []
@@ -268,30 +268,36 @@ class OpenAIAgentModel(AgentModel):
         else:
             assert_never(message)
 
-    @classmethod
-    def _map_user_message(cls, message: ModelRequest) -> Iterable[chat.ChatCompletionMessageParam]:
+    def _map_model_request(self, message: ModelRequest) -> Iterable[chat.ChatCompletionMessageParam]:
         for part in message.parts:
-            if isinstance(part, SystemPromptPart):
-                yield chat.ChatCompletionSystemMessageParam(role='system', content=part.content)
-            elif isinstance(part, UserPromptPart):
-                yield chat.ChatCompletionUserMessageParam(role='user', content=part.content)
-            elif isinstance(part, ToolReturnPart):
-                yield chat.ChatCompletionToolMessageParam(
+            yield self._map_model_request_part(part)
+
+    def _map_model_request_part(self, part: ModelRequestPart) -> chat.ChatCompletionMessageParam:
+        if isinstance(part, SystemPromptPart):
+            if self.model_name.startswith('o1'):
+                # o1 does not currently support role 'system', so for now we use role 'user' instead
+                return chat.ChatCompletionUserMessageParam(role='user', content=part.content)
+            else:
+                return chat.ChatCompletionSystemMessageParam(role='system', content=part.content)
+        elif isinstance(part, UserPromptPart):
+            return chat.ChatCompletionUserMessageParam(role='user', content=part.content)
+        elif isinstance(part, ToolReturnPart):
+            return chat.ChatCompletionToolMessageParam(
+                role='tool',
+                tool_call_id=_guard_tool_call_id(t=part, model_source='OpenAI'),
+                content=part.model_response_str(),
+            )
+        elif isinstance(part, RetryPromptPart):
+            if part.tool_name is None:
+                return chat.ChatCompletionUserMessageParam(role='user', content=part.model_response())
+            else:
+                return chat.ChatCompletionToolMessageParam(
                     role='tool',
                     tool_call_id=_guard_tool_call_id(t=part, model_source='OpenAI'),
-                    content=part.model_response_str(),
+                    content=part.model_response(),
                 )
-            elif isinstance(part, RetryPromptPart):
-                if part.tool_name is None:
-                    yield chat.ChatCompletionUserMessageParam(role='user', content=part.model_response())
-                else:
-                    yield chat.ChatCompletionToolMessageParam(
-                        role='tool',
-                        tool_call_id=_guard_tool_call_id(t=part, model_source='OpenAI'),
-                        content=part.model_response(),
-                    )
-            else:
-                assert_never(part)
+        else:
+            assert_never(part)
 
 
 @dataclass
