@@ -1,6 +1,7 @@
 from __future__ import annotations as _annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 import pytest
@@ -8,15 +9,18 @@ from dirty_equals import IsInt, IsJson, IsStr
 from inline_snapshot import snapshot
 from typing_extensions import NotRequired, TypedDict
 
+import pydantic_ai
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
 try:
+    import logfire._internal.stack_info
     from logfire.testing import CaptureLogfire
 except ImportError:
     logfire_installed = False
 else:
     logfire_installed = True
+    logfire._internal.stack_info.NON_USER_CODE_PREFIXES += (str(Path(pydantic_ai.__file__).parent.absolute()),)
 
 
 class SpanSummary(TypedDict):
@@ -91,8 +95,8 @@ def test_logfire(get_logfire_summary: Callable[[], LogfireSummary], set_event_lo
     )
     assert summary.attributes[0] == snapshot(
         {
-            'code.filepath': 'agent.py',
-            'code.function': 'run',
+            'code.filepath': 'test_logfire.py',
+            'code.function': 'test_logfire',
             'code.lineno': 123,
             'prompt': 'Hello',
             'agent': IsJson(
@@ -112,8 +116,9 @@ def test_logfire(get_logfire_summary: Callable[[], LogfireSummary], set_event_lo
                     'model_settings': None,
                 }
             ),
-            'mode_selection': 'from-agent',
+            'model_selection_mode': 'from-agent',
             'model_name': 'test-model',
+            'stream': False,
             'agent_name': 'my_agent',
             'logfire.msg_template': '{agent_name} run {prompt=}',
             'logfire.msg': 'my_agent run prompt=Hello',
@@ -177,7 +182,8 @@ def test_logfire(get_logfire_summary: Callable[[], LogfireSummary], set_event_lo
                                 'model': {'type': 'object', 'title': 'TestModel', 'x-python-datatype': 'dataclass'}
                             },
                         },
-                        'mode_selection': {},
+                        'model_selection_mode': {},
+                        'stream': {},
                         'model_name': {},
                         'agent_name': {},
                         'all_messages': {
@@ -264,8 +270,8 @@ def test_logfire(get_logfire_summary: Callable[[], LogfireSummary], set_event_lo
     )
     assert summary.attributes[1] == snapshot(
         {
-            'code.filepath': 'agent.py',
-            'code.function': 'run',
+            'code.filepath': 'test_logfire.py',
+            'code.function': 'test_logfire',
             'code.lineno': IsInt(),
             'run_step': 1,
             'logfire.msg_template': 'preparing model and tools {run_step=}',

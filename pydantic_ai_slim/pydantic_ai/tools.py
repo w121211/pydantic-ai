@@ -4,7 +4,7 @@ import dataclasses
 import inspect
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, TypeVar, Union, cast
+from typing import Any, Callable, Generic, Literal, TypeVar, Union, cast
 
 from pydantic import ValidationError
 from pydantic_core import SchemaValidator
@@ -15,6 +15,7 @@ from .exceptions import ModelRetry, UnexpectedModelBehavior
 
 __all__ = (
     'AgentDeps',
+    'ModelSelectionMode',
     'RunContext',
     'SystemPromptFunc',
     'ToolFuncContext',
@@ -29,6 +30,15 @@ __all__ = (
 
 AgentDeps = TypeVar('AgentDeps')
 """Type variable for agent dependencies."""
+ModelSelectionMode = Literal['from-agent', 'custom', 'override']
+"""How the [model][pydantic_ai.models.Model] was selected for the run.
+
+Meanings:
+
+- `'from-agent'`: The model set on the agent was used
+- `'custom'`: The model was set via the `model` kwarg, e.g. on [`run`][pydantic_ai.Agent.run]
+- `'override'`: The model was set by the [`override`][pydantic_ai.Agent.override] function.
+"""
 
 
 @dataclasses.dataclass
@@ -37,14 +47,20 @@ class RunContext(Generic[AgentDeps]):
 
     deps: AgentDeps
     """Dependencies for the agent."""
-    retry: int
-    """Number of retries so far."""
     messages: list[_messages.ModelMessage]
     """Messages exchanged in the conversation so far."""
     tool_name: str | None
     """Name of the tool being called."""
     model: models.Model
     """The model used in this run."""
+    prompt: str
+    """The original user prompt passed to the run."""
+    model_selection_mode: ModelSelectionMode
+    """Dependencies for the agent."""
+    retry: int = 0
+    """Number of retries so far."""
+    run_step: int = 0
+    """The current step in the run."""
 
     def replace_with(
         self, retry: int | None = None, tool_name: str | None | _utils.Unset = _utils.UNSET
