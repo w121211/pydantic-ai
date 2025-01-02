@@ -35,7 +35,7 @@ To use models, you need to provide an API key for the respective model provider.
 You can set API keys via:
 
 1. [Environment Variables](#environment-variables)
-2. [The `api_key` Argument](#api_key-argument)
+2. [The `api_key` Argument](#the-api_key-argument)
 
 ### Environment Variables
 
