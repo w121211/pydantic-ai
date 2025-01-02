@@ -47,6 +47,18 @@ export PROVIDER_API_KEY='your-api-key'
 
 Replace `PROVIDER` with the appropriate provider name (e.g., `OPENAI`, `ANTHROPIC`, `GEMINI`, `GROQ`, `MISTRAL`).
 
+Here is a table mapping model providers to their respective API key environment variables:
+
+| Model Provider | Environment Variable       |
+|----------------|-----------------------------|
+| OpenAI         | `OPENAI_API_KEY`            |
+| Anthropic      | `ANTHROPIC_API_KEY`         |
+| Gemini         | `GEMINI_API_KEY`            |
+| VertexAI       | `OPENAI_API_KEY`            |
+| Ollama         | `OLLAMA_API_KEY`            |
+| Groq           | `GROQ_API_KEY`              |
+| Mistral        | `MISTRAL_API_KEY`           |
+
 ### The `api_key` Argument
 
 If you don't want to or can't set the environment variable, you can pass it at runtime via the `api_key` argument when initializing the model:
