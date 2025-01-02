@@ -26,16 +26,16 @@ def test_infer_str_openai(env: TestEnv):
 
 def test_infer_str_gemini(env: TestEnv):
     env.set('GEMINI_API_KEY', 'via-env-var')
-    m = infer_model('gemini-1.5-flash')
+    m = infer_model('google-gla:gemini-1.5-flash')
     assert isinstance(m, GeminiModel)
-    assert m.name() == 'gemini-1.5-flash'
+    assert m.name() == 'google-gla:gemini-1.5-flash'
 
 
 @pytest.mark.skipif(not vertexai_imports_successful(), reason='google-auth not installed')
 def test_infer_vertexai(env: TestEnv):
-    m = infer_model('vertexai:gemini-1.5-flash')
+    m = infer_model('google-vertex:gemini-1.5-flash')
     assert isinstance(m, VertexAIModel)
-    assert m.name() == 'vertexai:gemini-1.5-flash'
+    assert m.name() == 'google-vertex:gemini-1.5-flash'
 
 
 def test_infer_str_unknown():
