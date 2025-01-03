@@ -1626,6 +1626,7 @@ version = "0.0.16"
 source = { editable = "examples" }
 dependencies = [
     { name = "asyncpg" },
+    { name = "devtools" },
     { name = "fastapi" },
     { name = "logfire", extra = ["asyncpg", "fastapi", "sqlite3"] },
     { name = "pydantic-ai-slim", extra = ["anthropic", "groq", "openai", "vertexai"] },
@@ -1634,14 +1635,10 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "devtools" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
+    { name = "devtools", specifier = ">=0.12.2" },
     { name = "fastapi", specifier = ">=0.115.4" },
     { name = "logfire", extras = ["asyncpg", "fastapi", "sqlite3"], specifier = ">=2.6" },
     { name = "pydantic-ai-slim", extras = ["openai", "vertexai", "groq", "anthropic"], editable = "pydantic_ai_slim" },
@@ -1649,9 +1646,6 @@ requires-dist = [
     { name = "rich", specifier = ">=13.9.2" },
     { name = "uvicorn", specifier = ">=0.32.0" },
 ]
-
-[package.metadata.requires-dev]
-dev = [{ name = "devtools", specifier = ">=0.12.2" }]
 
 [[package]]
 name = "pydantic-ai-slim"
