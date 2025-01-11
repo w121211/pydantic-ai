@@ -1,0 +1,241 @@
+請參考 agent-workflow-design_1，讓我們專注在開發 step executor，不用管其他 component
+* 請用 pydantic 定義 data types，data types 要明確，不要有模糊的定義
+* 請盡量參考並利用 pydantic ai 既有的 component, code，不要重複造輪子
+
+* Steps 會在一開始的 Plan 中定義好，請思考 Step 的 datatype，包括 step type, step task, required input, output format, …
+
+
+針對核心功能（core）寫一個 abstract code，用於示範你要怎樣設計這個系統
+- 使用PydanticAI
+- 請思考輸出的 agent 設定需要哪些 attributes
+- 先定義 types、interfaces
+- 這是一個 MVP app，簡單、清楚、易懂、不複雜
+* 請盡量參考 pydantic ai 病史用裡面的功能，不要重複寫
+
+
+
+我們正在開發一個 step executor
+目前在考慮從 autogen 換成 pydantic-ai
+
+
+要如何使用 pydantic-ai 來實現以下功能？
+* 純脆用戶的 step
+* Aagent 與用戶的 step - robin round chat
+* 如何即時儲存 chat 的 state（每個 message） & 恢復重啟？
+* Agent 生成的結果需經過用戶檢視
+  1. 用戶覺得 需要修改會給修改意見，然後 agent 按照用戶意見修改（循環）
+  2. 給予 APPROVE，只有在用戶檢視通過才會結束＆輸出成果
+
+ user approve 才能結束，或者 user ，要怎樣做？
+
+
+
+
+
+請參考`agent-workflow-design_1.md`，讓我們先專注在 Step 部分的開發，其他 component 先不用管
+1. Steps 是在一開始的 Plan 中就已經規劃好，所以要想想 Step 的 data type，包括 step type, step task, required input, output format, …
+2. 請盡量利用 agentchat 既有的 component，不要另外創造相似的東西
+3. 對於不同類型的 step，需要不同的 assistant
+4. 每個 message 需要被即時保存，Step 可以隨時被中斷、恢復
+5. 在純用戶的 step ，要怎樣實現？
+6. 純 function step 要用 tool agent
+7. 若需要 user approve，要怎樣做？
+
+
+
+請基於 agent-workflow-design 的「討論」章節，檢視修改agent-workflow-design_1
+* 這個 design 是面向給開發者，目的是希望讓他們了解整個系統，所以請加強說明，不要太過精簡，保留原先「討論」時的思考脈絡、為什麼這樣設計等等
+
+
+
+
+請參考 agent flow design，逐一分析「討論」中的每個主題，每次依序對一個主題做分析。
+1. 請先重述這個主題的觀點，請分析後給予反饋意見
+2. 你的分析重點是就我所提出的設計是否認同，請先思考分析，然後給予是否同意，若不同意的話請給你的方案
+3. 這是一個 MVP app，我們當前的重點不是去想各種需求、各種功能，而是專注在那些必要的「核心功能」，然後盡量把核心功能想完整。所以請不要提出一些不必要的、額外的功能建議。
+4. 你的分析要盡量以文章的方式呈現，要有分析及思考過程、脈絡邏輯，不要用 bullet points 方式精簡回答
+5. 分析的重點是在 app 的核心概念設計，不是 coding，不要寫 code。
+6. 請從「Replan（結論：replan 等同於 new task）」這個主題開始逐一分析，前面的主題已經分析過了，不用再分析。
+
+
+
+
+
+請先回答我的問題，再來修改你的 abstract code design
+1. 我希望是在每個 message 的顆粒度被儲存
+2. 每個 step agent 會依據該 step 而有所不同，而且 planned steps 會動態調整，在這種情況下，要預先創建 step agent 似乎不可能，還是你有方法？
+3. 若是在每個 step 前動態創建 step agent，要怎樣做？
+
+
+
+
+
+
+請參考 agent-workflow-design_1，針對核心功能（core）寫一個 abstract code，用於示範你要怎樣設計這個系統
+- 不用寫完整 code，只需要示範你的設計
+- 先定義 Component 的 data types
+
+
+
+
+
+
+請參考 agent flow design，我們現在一起來開發這個 flow 的核心功能（core）。
+請先不要寫code，讓我們先一起思考以下問題：
+- 我需要細粒度（每個message）層級的儲存，以便對話隨時可以中斷、接續，要怎樣儲存？
+- agentchat
+  - assistants: planner agent, step agent
+  - teams：至少要有兩個 teams（chats）
+    1. for plan: planner agent + user
+    2. for step: step agent + user
+
+
+- 不用考慮 database, api 等等，只需要考慮最核心的運作(core)
+
+
+
+
+若我希望：當 assistant 覺得有需要才去詢問 user，例如說是在完成 work 後需要 user 來 approve，但中間階段可能不需要，要如何使用 autogen 實現這個 team？
+
+
+
+
+
+
+--------------------
+System Instruction
+--------------------
+
+
+------ PydanticAI ------
+
+**Project Goal:**
+Develop a Minimum Viable Product (MVP) for a human-AI collaborative application. This application enables users to team up with AI agents to achieve their goals.
+
+**Development Approach:**
+We will use an iterative development cycle centered on prompt analysis, code generation, feedback, and revision.
+1.  **Prompt Analysis and Clarification:** Carefully analyze the provided prompt. If the prompt is unclear, ambiguous, or lacks sufficient detail, proactively ask clarifying questions to ensure a complete and accurate understanding of the desired functionality _before_ generating any code. This includes clarifying expected inputs, outputs, data types, and edge cases.
+2.  **Code Generation (Conditional):** Only after achieving a clear understanding of the prompt should you proceed with code generation.
+3.  **Feedback and Revision Cycle:** This is an iterative loop:
+    a. **Code Generation:** Generate code based on the clarified prompt.
+    b. **Feedback:** I will provide feedback on the generated code, including but not limited to:
+      _ Correctness and functionality
+      _ Logic and algorithm efficiency
+      _ Code style and readability
+      _ Adherence to specified requirements (e.g., type hints, interface definitions)
+    c. **Revision:** Incorporate the feedback by revising the generated code. This may involve refactoring, bug fixes, or implementing suggested improvements.
+    d. Repeat steps a-c until the code meets the specified requirements and feedback is addressed.
+
+**Technical Specifications:**
+- **Defining Types and Interfaces:** Start by defining types, interfaces, and abstract classes using Pydantic models for structure and validation. Specify field types explicitly, such as List[str] or Dict[str, int], to avoid ambiguity
+- **PydanticAI Framework:** Utilize the PydanticAI library to construct agents and manage interactions.
+- **Documentation:** Refer to the provided `agentchat` documentation as the primary guide for implementation details. Fully leverage its features and examples.
+- **Development Environment:** The development environment is pre-configured. No installation or configuration is required.
+
+
+
+
+
+------ Autogen Chat ------
+
+**Project Goal:**
+
+Develop a Minimum Viable Product (MVP) for a human-AI collaborative application. This application enables users to team up with AI agents to achieve their goals.
+
+**Development Approach:**
+
+We will use an iterative development cycle centered on prompt analysis, code generation, feedback, and revision.
+
+1.  **Prompt Analysis and Clarification:** Carefully analyze the provided prompt. If the prompt is unclear, ambiguous, or lacks sufficient detail, proactively ask clarifying questions to ensure a complete and accurate understanding of the desired functionality _before_ generating any code. This includes clarifying expected inputs, outputs, data types, and edge cases.
+
+2.  **Code Generation (Conditional):** Only after achieving a clear understanding of the prompt should you proceed with code generation.
+
+3.  **Feedback and Revision Cycle:** This is an iterative loop:
+
+    a. **Code Generation:** Generate code based on the clarified prompt.
+
+    b. **Feedback:** I will provide feedback on the generated code, including but not limited to:
+    _ Correctness and functionality
+    _ Logic and algorithm efficiency
+    _ Code style and readability
+    _ Adherence to specified requirements (e.g., type hints, interface definitions)
+
+    c. **Revision:** Incorporate the feedback by revising the generated code. This may involve refactoring, bug fixes, or implementing suggested improvements.
+
+    d. Repeat steps a-c until the code meets the specified requirements and feedback is addressed.
+
+**Technical Specifications:**
+
+- **Defining Types and Interfaces:** Start by defining types, interfaces, and abstract classes using Pydantic models for structure and validation. Specify field types explicitly, such as List[str] or Dict[str, int], to avoid ambiguity
+
+- **Autogen Framework:** Utilize the `autogen` library (specifically the `agentchat` package) to construct agents and manage interactions.
+
+- **Documentation:** Refer to the provided `agentchat` documentation as the primary guide for implementation details. Fully leverage its features and examples.
+
+- **Development Environment:** The development environment is pre-configured. No installation or configuration is required.
+
+
+
+
+
+// ------ Autogen studio ------
+
+# Instruction
+
+**Project Goal:**
+
+We're building a Minimum Viable Product (MVP) for an AI agent. Our focus is on creating a clear, simple, and user-friendly experience.
+
+**Development Approach:**
+
+- **Core Development Cycle:** We'll use an iterative cycle focused on code generation, feedback, and revision. The process is as follows:
+
+  1.  **Prompt Understanding:** You will first analyze the my prompt. _If the prompt is unclear or ambiguous, you will ask clarifying questions to ensure a complete understanding of the desired task before proceeding._
+  2.  **Code Generation (if prompt is clear):** Once the prompt is understood, you will generate basic code.
+  3.  **Feedback:** I will provide feedback on the generated code (e.g., pointing out errors, suggesting improvements in logic, style, or efficiency).
+  4.  **Revision:** You will use this feedback to revise and improve its code generation capabilities.
+  5.  This cycle (from Prompt Understanding to Revision) repeats, gradually to produce high-quality code.
+
+- **Autogen Framework:** We'll leverage the Autogen framework for building our multi-agent system. Key components we'll work with include:
+
+  - Agent Types (AssistantAgent, UserProxyAgent, etc.)
+  - Team Management (GroupChat configurations)
+  - Message Handling
+  - Database Integration (following autogen-studio patterns)
+  - WebSocket Communication for real-time updates
+
+**Getting Started:**
+
+1.  **Define Core Components:** Following autogen-studio's architecture, we'll structure our application with:
+
+    - Clear separation of database, web, and agent management layers
+    - Well-defined message and event handling
+    - Proper configuration management for agents and teams
+
+2.  **Reference Implementation:**
+    - Use autogen-studio's implementation as a guide for best practices
+    - Adapt its patterns for database management, WebSocket handling, and agent configuration
+    - Follow similar error handling and logging patterns
+
+
+
+// --------------------
+// Gitingest
+// --------------------
+
+```shell
+# Gitingest
+gitingest https://github.com/pydantic/pydantic-ai/tree/main/examples \
+  --max-size="50000" \
+  --exclude-pattern="**/tests/, *.gitignore, requirements.txt, Dockerfile, pyproject.toml, LICENSE-CODE, MANIFEST.in, setup.py"
+
+
+# Autogen
+gitingest https://github.com/microsoft/autogen/tree/main/python/packages/autogen-agentchat/src/autogen_agentchat \
+  --max-size="50000" \
+  --exclude-pattern="**/tests/, *.gitignore, requirements.txt, Dockerfile, pyproject.toml, LICENSE-CODE, MANIFEST.in, setup.py"
+
+gitingest https://github.com/microsoft/autogen/tree/main/python/packages/autogen-core/docs/src/user-guide/agentchat-user-guide \
+  --max-size="50000" \
+  --exclude-pattern="**/tests/, *.gitignore, requirements.txt, Dockerfile, pyproject.toml, LICENSE-CODE, MANIFEST.in, setup.py, *.svg"
+```
