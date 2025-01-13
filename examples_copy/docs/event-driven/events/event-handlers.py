@@ -24,7 +24,7 @@ class AsyncEventHandler(Protocol[T]):
 EventHandler = AsyncEventHandler[T] | SyncEventHandler[T]
 
 
-class EventStream(Generic[T]):
+class EventBus(Generic[T]):
     """Event stream with type-based subscription support for both sync and async handlers"""
 
     def __init__(self):
@@ -72,28 +72,26 @@ class EventStream(Generic[T]):
 class TaskManager:
     """Manages all running tasks"""
 
-    def __init__(self, event_stream: EventStream):
-        self.event_stream = event_stream
+    def __init__(self, event_bus: EventBus):
+        self.event_bus = event_bus
         self.active_tasks: Dict[str, Task] = {}
         self._setup_handlers()
 
     def _setup_handlers(self):
         # Task lifecycle
-        self.event_stream.subscribe(EventType.TASK_CREATE, self._on_task_create)
-        self.event_stream.subscribe(EventType.TASK_COMPLETE, self._on_task_complete)
-        self.event_stream.subscribe(EventType.TASK_ERROR, self._on_task_error)
+        self.event_bus.subscribe(EventType.TASK_CREATE, self._on_task_create)
+        self.event_bus.subscribe(EventType.TASK_COMPLETE, self._on_task_complete)
+        self.event_bus.subscribe(EventType.TASK_ERROR, self._on_task_error)
 
         # Subtask coordination
-        self.event_stream.subscribe(
-            EventType.SUBTASK_COMPLETE, self._on_subtask_complete
-        )
-        self.event_stream.subscribe(EventType.SUBTASK_ERROR, self._on_subtask_error)
+        self.event_bus.subscribe(EventType.SUBTASK_COMPLETE, self._on_subtask_complete)
+        self.event_bus.subscribe(EventType.SUBTASK_ERROR, self._on_subtask_error)
 
     async def _on_task_create(self, data: Dict[str, Any]):
         task_id = data['task_id']
         task_path = Path(data['path'])
 
-        task = Task(task_id, task_path, self.event_stream)
+        task = Task(task_id, task_path, self.event_bus)
         await task.init()
         self.active_tasks[task_id] = task
 
@@ -130,16 +128,16 @@ class TaskManager:
 class ChatManager:
     """Manages active chats"""
 
-    def __init__(self, event_stream: EventStream):
-        self.event_stream = event_stream
+    def __init__(self, event_bus: EventBus):
+        self.event_bus = event_bus
         self.active_chats: Dict[str, Chat] = {}
         self._setup_handlers()
 
     def _setup_handlers(self):
-        self.event_stream.subscribe(EventType.CHAT_START, self._on_chat_start)
-        self.event_stream.subscribe(EventType.CHAT_MESSAGE, self._on_chat_message)
-        self.event_stream.subscribe(EventType.CHAT_COMPLETE, self._on_chat_complete)
-        self.event_stream.subscribe(EventType.CHAT_ERROR, self._on_chat_error)
+        self.event_bus.subscribe(EventType.CHAT_START, self._on_chat_start)
+        self.event_bus.subscribe(EventType.CHAT_MESSAGE, self._on_chat_message)
+        self.event_bus.subscribe(EventType.CHAT_COMPLETE, self._on_chat_complete)
+        self.event_bus.subscribe(EventType.CHAT_ERROR, self._on_chat_error)
 
     async def _on_chat_start(self, data: Dict[str, Any]):
         task_id = data['task_id']
@@ -174,15 +172,13 @@ class ChatManager:
 class FileSystemWatcher:
     """Handles file system operations"""
 
-    def __init__(self, event_stream: EventStream):
-        self.event_stream = event_stream
+    def __init__(self, event_bus: EventBus):
+        self.event_bus = event_bus
         self._setup_handlers()
 
     def _setup_handlers(self):
-        self.event_stream.subscribe(EventType.CHAT_MESSAGE, self._on_chat_message)
-        self.event_stream.subscribe(
-            EventType.SUBTASK_COMPLETE, self._on_subtask_complete
-        )
+        self.event_bus.subscribe(EventType.CHAT_MESSAGE, self._on_chat_message)
+        self.event_bus.subscribe(EventType.SUBTASK_COMPLETE, self._on_subtask_complete)
 
     async def _on_chat_message(self, data: Dict[str, Any]):
         chat_id = data['chat_id']
@@ -207,15 +203,15 @@ def log_events(data: Dict[str, Any]):
 
 # Example usage
 async def setup_system():
-    event_stream = EventStream()
+    event_bus = EventBus()
 
     # Add general logging
     for event_type in EventType:
-        event_stream.subscribe(event_type, log_events)
+        event_bus.subscribe(event_type, log_events)
 
     # Initialize managers
-    task_manager = TaskManager(event_stream)
-    chat_manager = ChatManager(event_stream)
-    fs_watcher = FileSystemWatcher(event_stream)
+    task_manager = TaskManager(event_bus)
+    chat_manager = ChatManager(event_bus)
+    fs_watcher = FileSystemWatcher(event_bus)
 
-    return event_stream, task_manager, chat_manager, fs_watcher
+    return event_bus, task_manager, chat_manager, fs_watcher

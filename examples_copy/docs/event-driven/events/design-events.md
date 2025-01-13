@@ -1,3 +1,5 @@
+# Task
+
 1. 創建新任務流程：
 ```
 UserCreateTaskCommand
@@ -15,7 +17,9 @@ StartTaskCommand
   → StartSubtaskCommand
 ```
 
-3. 執行 Subtask 流程：
+# Subtask
+
+1. 執行 Subtask 流程：
 ```
 StartSubtaskCommand
 
@@ -31,19 +35,7 @@ StartSubtaskCommand
   → CreateChatCommand
 ```
 
-4. Chat 對話流程：
-```
-UserSubmitMessageCommand
-  → MessageReceived
-  → MessageSavedToFile
-  → ChatUpdated
-  → AgentProcessedMessage
-  → AgentResponseGenerated
-  → MessageSavedToFile
-  → ChatUpdated
-```
-
-5. Subtask 完成流程（需審批）：
+2. Subtask 完成流程（需審批）：
 ```
 UserSubmitMessageCommand
   → MessageReceived
@@ -54,13 +46,14 @@ UserSubmitMessageCommand
 UserApproveSubtaskCommand
   → FinishSubtaskCommand
 
-FinishSubtaskCommand
-  → SubtaskOutputGenerated
-  → UserApproveSubtaskCommand
-  (Subtask service)
+on UserApprovedWork
+→ CompleteSubtaskCommand
+
+CompleteSubtaskCommand
+→ SubtaskOutputGenerated
+  (SubtaskService)
   → SubtaskCompleted
   → NextSubtaskTriggered
-
     （task service: 取得 next subtask, emit StartSubtaskCommand）
     → StartSubtaskCommand (觸發下一個 subtask 的流程)
 ```
@@ -71,7 +64,7 @@ FinishSubtaskCommand
 - 如果 User 拒絕 agent 結果，就直接送需要修改什麼的訊息（不批准），延續 chat
 
 
-6. Subtask 完成流程（無需審批）：
+3. Subtask 完成流程（無需審批）：
 ```
 SubtaskOutputGenerated
 → SubtaskCompleted
@@ -80,21 +73,49 @@ SubtaskOutputGenerated
 ```
 
 
-7. 開新 Chat 流程：
-```
-UserCreateChatCommand
-  → CreateChatCommand
+# Chat
 
-CreateChatCommand
-  → ChatFileCreated
-  → ChatCreated (包含 initialize 等）
-  → AgentInitialized （依照 subtask 的設定）
-  → FirstPromptInitialized（依照 subtask 的設定（包含 input）自動產生第一個 prompt）
-  → SubmitPromptCommand (或是 PromptMessageReceived)
-    → MessageSavedToFile
-    → ChatUpdated
-    → AgentProcessedMessage
-    → AgentResponseGenerated
-    → MessageSavedToFile
-    → ChatUpdated
+1. StartNewChatCommand
+
 ```
+StartNewChatCommand
+→ ChatFileCreated
+→ ChatCreated (包含 initialize 等)
+→ AgentInitialized （依照 subtask 的設定）
+→ FirstPromptInitialized（依照 subtask 的設定（包含 input）自動產生第一個 prompt）
+→ SubmitPromptCommand (或是 PromptMessageReceived)
+  → MessageSavedToFile
+  → ChatUpdated
+  → AgentProcessedMessage
+  → AgentResponseGenerated
+  → MessageSavedToFile
+  → ChatUpdated
+```
+
+2. UserOpenChatCommand
+  - 無須考慮離開原本 chat 的情況，因為 chat 都是即時被儲存的，即便離開也不會影響原本正在儲存中的 chat
+
+```
+UserOpenChatCommand
+→ ChatFileLoaded
+→ ChatReady
+```
+
+3. UserSubmitMessageCommand
+
+```
+UserSubmitMessageCommand
+→ MessageReceived
+→ MessageSavedToFile
+→ ChatUpdated
+(if user approved the work)
+→ UserApprovedWork
+(if not, continue)
+→ AgentProcessedMessage
+→ AgentResponseGenerated
+→ MessageSavedToFile
+→ ChatUpdated
+```
+
+
+

@@ -1,22 +1,23 @@
 # Space
 
-直接使用 user 本機的資料夾，方變 user 用不同的方式來做修改
+直接使用 user 本機的資料夾，方便 user 用不同的方式來做修改
 
-```
-# directory structure
+### 資料夾結構
 
-project_name
+基本架構：
 - task_21-hello_world
   - works
     - remote_direcoty_1
       - ...
     - remote_direcoty_2
-  - subtask_0-Planning
-    - step_0_1-Planning
-      - output-work_plan_20241010
-      - subtask.lock
-    - step_0_2-Planning
-  - step_1-a_sample_step
+  - step0_planning 
+    - step01_planning
+      - output-work_plan_20241010.txt
+    - step02_an_example_of_sub_step
+  - step1_a_sample_step
+    - output.json                  # 永遠是最新的輸出
+    - output_history/              # 歷史紀錄資料夾
+      - output_20240113_153000.json     # 使用易讀的時間格式
     - chat_20241023_xxxx.txt
     - chat_20241023_0921.txt
     - work-goodbye_world_20241023_0921.py
@@ -32,9 +33,44 @@ project_name
   - ...
 - ...
 - (一個問題是當累積太多時，UI可能會需要隱藏部分 tasks，例如只展示當前在進行的)
+
+
+命名方案，待決定：
+- step0_collect_opinions_from_sites     # 方案1
+- step0_collect_opinions_from_sites     # 方案1
+- step0_collect_opinions_from_sites     # 方案1
+
+- step_0-Collect_opinions_from_sites    # 方案2
+- step0_collect_opinions_from_sites     # 方案1
+- step0_collect_opinions_from_sites     # 方案1
+
+- step0_收集網上意見
+- step1_AI助手挑選討論串
+- step3_AI助手撰寫討論串回應
+
+- step_0-收集網上意見
+- step_1-AI助手挑選討論串
+- step_2-AI助手撰寫討論串回應
+
+
+### Subtask (step) folder
+
+`output.json`範例
+
+```json
+{
+  "summary": {
+    "step": "驗證輸入資料",
+    "status": "成功",
+    "completed_at": "2024-01-13 15:30:00",
+    "message": "驗證通過：共處理 100 筆資料"
+  },
+  "result": {
+    // 實際輸出內容
+  }
+}
 ```
 
-subtask (step) folder
 - 若被刪除
   - case: 正在執行的 subtask folder -> 無法寫入，產生 error
   - case: 已經執行完畢的 subtask folder -> 除非重跑 task，不然不會自動建立
@@ -42,10 +78,6 @@ subtask (step) folder
     - 因為沒有 subtask folder，所以無法重新執行這的 subtask
 - 重新執行
   - 依照 folder 中的 input (或不需要 input)，重跑 subtask
-  - 
-  - 
-
-
 
 ```
 # UI view: project navigator
