@@ -1,3 +1,638 @@
+
+```js
+// 定義事件流
+const userEventStream = new EventStream();
+// 訂閱事件
+const subscription = userEventStream.subscribe('user_created', handleUserCreatedEvent);
+// 處理事件
+function handleUserCreatedEvent(event) {
+console.log(`User created: ${event.userId}`);
+}
+// 取消訂閱
+subscription.unsubscribe();
+```
+
+請用 python 寫一個輕量級的 event driven 系統，實現上述這段功能
+
+1. 要考慮 sync、async events
+2. 要有 publish
+
+
+
+
+讓我們專注在 chat class
+1. 目前只考慮 human agent chat，其他形式的 chat 不考慮
+2. 增加 chat events:
+    1. message sent
+    2. message received
+3. 要有（但不限於） handlers 
+    1.  human message sent
+    2. Handle agent message sent
+    3. Handle agent message sent
+4. handlers 需要 subscribe
+5. agent 會透過 chat init params 取得，不自己創建
+6. 不需要 _send_event -> 就直接call self.event_manager.publish
+
+1. Event 要用 chat class 來 handle，例如：
+
+
+
+讓我們討論 round robin chat：
+
+我個人覺得不需要在 chat class 提供 emit, on，如果有需要註冊某些事件，應該可以透過
+
+
+請另外寫一個 HumanAgentChat：human speaks -> agent response -> human -> agent -> (loop)
+1. chat init 時會收到 agent
+2. 定義需要的 events、handlers
+3. 在 chat class 內使用 agent 做回復，也就是說需要寫相對應的 handler，例如 onMesasgeReceived
+4. 我個人覺得不需要在 chat class 提供 emit, on，如果有需要註冊某些事件，應該可以透過 
+
+
+
+
+
+1. 我希望在 chat  class 中處理 agent 的 response，agents 會在一開始的階段 pass 給 chat
+2. 
+
+
+我想討論程式的命名問題
+
+我現在有一個 chat ，想採用 event driven架構
+這個 chat 基本上是：human speaks -> agent response -> human -> agent -> (loop)考慮的 events：
+1. Human message send
+2. Agent message send
+
+我該怎樣命名 handler？例如要 handle human message send，
+我應該要叫 handle_human_message_send？ 但以本質上又很像是 on_human_message_receive？
+
+考慮的 handlers：
+1. 
+
+
+讓我們專注在 chat class
+1. 目前只考慮 human agent chat，其他形式的 chat 不考慮
+2. Agent 應該是透過 subtask pass 給 chat (init)
+3. 增加 events:
+    1. Human message send
+    2. Agent message send
+4. Event 要用 chat class 來 handle，例如：
+
+```
+
+```
+
+
+1. Human agent chat 的處理參考 chat_app.py
+2. 
+
+
+
+
+1. 
+2. 請參考 `task-implement.md` 及 given codes，重寫 task system，採用 event stream 
+3. 用 pydantic model 定義 data type，要明確的 type，避免 Any
+4. 將個別 Manager 合併成單一 EventManager
+5. 要包含 example usage
+
+
+
+
+
+請 implement 這個系統架構：
+* 請思考 event stream 要怎樣設計？
+* 全寫在一個 file 裡
+* 我只要基本的 abstract code
+
+
+Event stream
+
+event_stream.subscribe(“some-event”,  {event-data})
+
+
+
+
+
+使用者透過快捷引用、輸入，來增加 prompt 的編輯性
+
+方向鍵上、下，切換先前 prompt
+
+Command '/': 導入常用的 prompt template，例如 '/revise-my-work'
+- 應該是要直接導入完整text，還是保留成 `/revise-my-work` block 的形式？
+    - 感覺各有各的好
+
+
+Command '#': Reference a file (GitHub Copilot)
+
+
+
+導入常用的 prompt template，例如 '/revise-my-work'
+- 應該是要直接導入完整text，還是保留成 `/revise-my-work` block 的形式？
+  - 感覺各有各的好
+
+
+
+
+
+請基於 `chat_app.py `，想像一個 workflow，包含多個 steps，每個 step 都是一個 chat，這時候
+
+
+
+請基於 `chat_app.py `，我想要允許用戶進行多個 chats（這應該需要透過資料庫管理每個 chat 的狀態），要怎樣調整？
+
+* 該怎樣命名 chat？chat, session, or …? -> conversation 
+
+
+
+
+
+
+
+不同的 agent 開啟 chats，
+
+
+Chat Agent 
+Function Agent 
+
+
+
+* 用戶輸入請參考 flight_booking.py 的 code 寫法
+
+讓我們開發一個會與用戶互動的 planner agent
+* 盡量參考並使用 pydantic ai 的 component 來構建 agent，不要重複造輪子
+* 盡量參考並用 chat_app.py 的 code 寫法來實作
+* 不要考慮 database，純專注在完成 planner agent
+
+Planner agent 
+* 要幫助用戶的 task 規劃 plan，plan 包含一系列的 steps。
+* 這些 steps 將會透過被 agent 依序執行，每個 step 會由一個 agent 協助完成（其中可能會有用戶參與）。
+* 若用戶提出來的 task 過於龐大，planner 會與用戶透過對話方式，釐清用戶的需求，調整成適合的 task
+* Planner 提出 plan 後用戶會檢視並給予意見，只有當用戶 APPROVE 時才結束，並輸出 plan。
+* 例如（這裡只是用來展示，實際要更為複雜）：
+    * 初始 task：宣傳我的開源專案
+    * 經過討論調整後的 task：每天瀏覽網上技術論壇，搜尋與我的開源專案相關的討論串，參與討論
+    * Steps:
+        * 在技術論壇A、B、C搜尋某技術的相關討論串
+        * Agent 選擇適合的討論串
+        * Agent 編寫回復文，用戶檢視並給予建議，直到檢視通過
+        * 送出回復文
+
+
+
+
+請參考 agent-workflow-design_1，讓我們專注開發 “step executor” 的功能，不用管其他 component
+* 用 pydantic 定義 data types，data types 要明確，不要有模糊的定義
+* 盡量參考並使用 pydantic ai 的 component 來構建 agent，不要重複造輪子
+* 盡量參考並用 chat_app.py 的 code 寫法來實作
+* 我們在開發的是 MVP app，所以務求簡單、清楚、易懂、不複雜
+
+
+
+
+請參考 pydantic-ai examples，思考回答以下問題：
+* 如何實現多個 agent 的 round robin chat? 
+* 如何實現多個 agent 的 round robin chat?，其中裡面中包含 user （例如 agent A -> agent B -> user -> A -> B）？
+* 若想開發一個 multi agent app，包含生成者與檢視者2個agent，生成者生成的成果會由檢視者檢視並給予 critic，生成者會依照 critic 修改後生成，反覆這個步驟直到檢視者檢視通過。
+* 
+
+
+
+
+
+
+我們正在開發一個 step executor。
+請參考`pydantic-pydantic-ai.txt`，思考回答以下問題
+
+Step executor 需要哪些功能？
+    * agent (tool support), robin round chat → step assistant
+    * 要能即時儲存 chat state & 恢復
+
+
+
+
+
+
+
+Source:
+```
+class UserProxyAgent(BaseChatAgent):
+    """An agent that can represent a human user through an input function.
+
+    This agent can be used to represent a human user in a chat system by providing a custom input function.
+
+    Args:
+        name (str): The name of the agent.
+        description (str, optional): A description of the agent.
+        input_func (Optional[Callable[[str], str]], Callable[[str, Optional[CancellationToken]], Awaitable[str]]): A function that takes a prompt and returns a user input string.
+
+    .. note::
+
+        Using :class:`UserProxyAgent` puts a running team in a temporary blocked
+        state until the user responds. So it is important to time out the user input
+        function and cancel using the :class:`~autogen_core.CancellationToken` if the user does not respond.
+        The input function should also handle exceptions and return a default response if needed.
+
+        For typical use cases that involve
+        slow human responses, it is recommended to use termination conditions
+        such as :class:`~autogen_agentchat.conditions.HandoffTermination` or :class:`~autogen_agentchat.conditions.SourceMatchTermination`
+        to stop the running team and return the control to the application.
+        You can run the team again with the user input. This way, the state of the team
+        can be saved and restored when the user responds.
+
+        See `Human-in-the-loop <https://microsoft.github.io/autogen/dev/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html>`_ for more information.
+
+    Example:
+        Simple usage case::
+
+            import asyncio
+            from autogen_core import CancellationToken
+            from autogen_agentchat.agents import UserProxyAgent
+            from autogen_agentchat.messages import TextMessage
+
+
+            async def simple_user_agent():
+                agent = UserProxyAgent("user_proxy")
+                response = await asyncio.create_task(
+                    agent.on_messages(
+                        [TextMessage(content="What is your name? ", source="user")],
+                        cancellation_token=CancellationToken(),
+                    )
+                )
+                print(f"Your name is {response.chat_message.content}")
+
+    Example:
+        Cancellable usage case::
+
+            import asyncio
+            from typing import Any
+            from autogen_core import CancellationToken
+            from autogen_agentchat.agents import UserProxyAgent
+            from autogen_agentchat.messages import TextMessage
+
+
+            token = CancellationToken()
+            agent = UserProxyAgent("user_proxy")
+
+
+            async def timeout(delay: float):
+                await asyncio.sleep(delay)
+
+
+            def cancellation_callback(task: asyncio.Task[Any]):
+                token.cancel()
+
+
+            async def cancellable_user_agent():
+                try:
+                    timeout_task = asyncio.create_task(timeout(3))
+                    timeout_task.add_done_callback(cancellation_callback)
+                    agent_task = asyncio.create_task(
+                        agent.on_messages(
+                            [TextMessage(content="What is your name? ", source="user")],
+                            cancellation_token=CancellationToken(),
+                        )
+                    )
+                    response = await agent_task
+                    print(f"Your name is {response.chat_message.content}")
+                except Exception as e:
+                    print(f"Exception: {e}")
+                except BaseException as e:
+                    print(f"BaseException: {e}")
+    """
+```
+
+
+I fix the bug written in the docstring by
+```
+…
+            async def cancellable_user_agent():
+                try:
+                    timeout_task = asyncio.create_task(timeout(3))
+                    timeout_task.add_done_callback(cancellation_callback)
+                    agent_task = asyncio.create_task(
+                        agent.on_messages(
+                            [TextMessage(content="What is your name? ", source="user")],
+                            cancellation_token=token,
+                        )
+…
+```
+
+Please write a commit message and PR for this fix.
+
+
+
+
+
+
+Agent 融入目前的工作流
+
+請做一個最基本的 LLM agent，他會接收使用者的輸入，然後輸出
+
+
+# Instruction
+
+**Project Goal:**
+
+We're building a Minimum Viable Product (MVP) for an AI agent. Our focus is on creating a clear, simple, and user-friendly experience.
+
+**Development Approach:**
+
+*   **Core Development Cycle:** We'll use an iterative cycle focused on code generation, feedback, and revision. The process is as follows:
+
+    1.  **Prompt Understanding:** You will first analyze the my prompt. *If the prompt is unclear or ambiguous, you will ask clarifying questions to ensure a complete understanding of the desired task before proceeding.*
+    2.  **Code Generation (if prompt is clear):** Once the prompt is understood, you will generate basic code.
+    3.  **Feedback:** I will provide feedback on the generated code (e.g., pointing out errors, suggesting improvements in logic, style, or efficiency).
+    4.  **Revision:** You will use this feedback to revise and improve its code generation capabilities.
+    5.  This cycle (from Prompt Understanding to Revision) repeats, gradually to produce high-quality code.
+
+*   **PydanticAI Framework:** We'll leverage the PydanticAI framework ([https://ai.pydantic.dev/](https://ai.pydantic.dev/)) for building the agent. This choice allows us to define clear interfaces and data types upfront, which will be crucial for both code generation and the interpretation of feedback.
+
+**Getting Started:**
+
+1.  **Define Interfaces and Types:** Before generating code, we'll define the interfaces and data types it will work with. This provides a clear target for the code generation and ensures consistency.
+
+
+
+3. Write components directly inside the `page.tsx` to make the implementation quick and straightforward.
+4. Your first goal is to replicate the ui design. No need 100% replicate, just use it as reference.
+5. Use Zustand to create a store for mock data.
+6. Adopt a console style UI design. 
+
+Based on the UI design and implementation plan, let’s develop the demo app.
+
+1. Follow MVP principles.
+2. Implementation should be follow the interactive cycle style. It start with simple and basic elements, and then I will review and advise the improvements iteratively.
+3. Write components directly inside the `page.tsx` to make the implementation quick and straightforward.
+4. Your first goal is to replicate the ui design. No need 100% replicate, just use it as reference.
+5. Use Zustand to create a store for mock data.
+6. Adopt a console style UI design. 
+
+
+請寫一個 ai agent  program，這個 agent 會依照給予的使用者目標，輸出一個 agent 設定
+
+- 使用PydanticAI，https://ai.pydantic.dev/
+- 請思考輸出的 agent 設定需要哪些 attributes
+- 先定義 types、interfaces
+- 這是一個 MVP app，簡單、清楚、易懂、不複雜
+
+Agent create agent:
+
+請寫一個 ai agent  program，這個 agent 會依照給予的使用者目標，輸出一個 agent 設定
+
+- 使用PydanticAI，https://ai.pydantic.dev/
+- 請思考輸出的 agent 設定需要哪些 attributes
+- 先定義 types、interfaces
+- 這是一個 MVP app，簡單、清楚、易懂、不複雜
+
+
+What’s next?
+你現在在做什麼、手上有哪些在進行、每個的目標是？ -> UI demo、core、
+越快能有一個東西越好，最好能趕快開始使用，例如說
+
+Home
+> 當前的專案 0
+> sprint
+
+mvp，甚至比 mvp 更為簡陋，總之先做一個東西出來
+> 具體是什麼東西？
+>> 會推著我做事、用我目前的工作流 
+-> goal: mvp -> ui? flow?
+
+就將我現在的工作流程式化
+1. UI
+2. flow（工作流）
+3. 宣傳：調查 -> 
+
+Prompt -> 工作流程式 -> 
+
+UI App: 
+
+Core：
+
+
+
+
+
+
+
+
++ App UI 
+
+
+
+
+
+
+
+Dash board 
+
+有些時候我可能會完成一個工作後，卻不知道下個工作要做什麼...在這種時候 app 可以怎樣推動我工作？
+例如：我現在已經完成了首頁的設計、強化mocked data的真實性，下一個可能是實現 mocked app，但我在此產生了惰性，不太想去繼續下一步
+-> 這個時候我希望 AI 推著我去做下一步，像是說當我給了這些 output ，他就開始跑下一步了，不用管我，然後我就去休息放空，等回來再來看成果
+
+在開發UI的過程中，和AI來來回回修改很多次，工作基本上都需要分階段，每次完成一些，確認後重啟一個新的，然後接續往下一個階段完善，想要一次完成通常效果不好。我在想的是，是否能將這樣的過程給記錄下來，然後將他流程化，同樣的東西，未來就不用我在那裡一步步指引？
+
+
+
+
+必須就是階段式，沒辦法一次完成，這種分階段的
+
+
+
+
+我覺得優先級分層顯示不錯，但在 MVP 階段，是否需要這樣做？
+若還是以 task 為單位，但是可以在每個 task 上標註優先層級？
+
+
+
+
+
+
+
+我建議以任務為單位
+
+```
+📅 Today 12/15  [點擊任務可展開詳細資訊及工作介面]
+
+◽ 進行客戶訪談 /訪談#12
+  ✓ 🤖 已準備訪談大綱和前期資料
+  ➝👤 請在 14:00 進行線上訪談🕗
+
+◽ 撰寫技術文章 /內容#45 (⚠️逾期1天)
+  ✓ 🤖 已整理參考資料和大綱
+  ➝ 👤 等待您撰寫核心內容✍️
+
+◽ 審核用戶反饋分類 /用戶回饋
+  ✓ 🤖 已分類完成 (2 bugs, 1 feature)
+  ➝ 👤 待您確認解決方案✍️
+
+◽ 確認本週更新說明 /產品發布
+  ✓ 🤖 草稿已生成
+  ➝ 👤 需要您審核內容✍️
+
+◽ Discord 社群維護 /社群經營
+  ➝ 🤖 已發布今日進度更新 ⏳
+```
+
+這個介面設計：
+- 使用者是否會因為看到太多需要自己做的工作而感到厭煩、不想開啟？有哪些方法來改善？
+
+
+
+依照你的設計，假設我是一個使用者，我最需要關注的可能是 Today 區塊，特別是那些需要我來做的工作
+1. 在現在的設計中，我需要做的工作除了審核以外，我也希望有一些是需要完全由我來做的工作，在我給了工作成果後才可繼續
+2. 在我看到需要我做的工作，我要怎樣反應？是點擊任務，然後開始審核？
+
+請先思考＆回答問題，不要修改
+
+
+
+請依照上述情境，來模擬 app 的首頁顯示，格式請參考：
+
+
+```
+--- Home Page ---
+[Logo]
+[Sidebar]
+
+📅 Today 10/14
+✓ 審核競品分析報告 /新功能
+◽ 審核產品數據報告 /週報#42 (⚠️逾期1天)
+  ↳ 👤 待使用者審核
+◽ 確認訪談重點 /訪談
+  ↳ 🤖 整理逐字稿
+
+10/13
+✓ 更新產品規格 /新功能
+✓ 客戶訪談 /訪談
+
+10/11
+✓ 系統測試 /新功能
+
+📋 未排程
+◽ 更新使用手冊 /新功能
+◽ 整理客戶回饋 /訪談
+```
+
+
+
+我需要模擬一些情境來展現這個 app 是推著我做事，而不需要我主動去做
+請建議些適合的情境？
+
+        # Create team
+        team = RoundRobinGroupChat(
+            agents=[assistant, user_proxy],
+            termination_condition=termination
+        )
+        
+        # Run the team with initial prompt
+        initial_prompt = self._format_step_inputs(step)
+        result = await team.run(task=initial_prompt)
+        
+        # Yield all messages
+        for msg in result.messages:
+            yield msg
+
+
+
+>        for msg in result.messages:
+>            yield msg
+
+這樣就有辦法讓 _execute_interactive_step 持續 yield 嗎？
+
+
+1. For message persistence, should we design a storage interface that can support different backends (file system, database, etc.), or should we focus on a simple file-based implementation for the MVP?
+
+Focus on MVP
+
+1. For step interruption/resumption, do we need to maintain conversation state across sessions (meaning full serialization/deserialization of agent states), or is it sufficient to just maintain message history?
+
+I am not sure about what’s included in the conversation state. Is it possible to recreate the conversation state using the message history?
+
+1. For step execution results ("Work" in the design doc), should we treat these as artifacts using autogen's artifact system, or should we implement a separate storage mechanism?
+
+Treat as artifacts.
+
+1. For pure user operation steps, should we implement this through a specialized UserProxyAgent, or should we have a different mechanism to handle user input/operations?
+
+If UserProxyAgent is able to achieve this, then use it. Remember we are aiming for MVP.
+
+
+
+請參考`agent-workflow-design_1.md`，讓我們先專注在 Step 部分的開發，其他 component 先不用管
+
+1. Steps 是在一開始的 Plan 中就已經規劃好，所以要想想 Step 的 data type，包括 step type, step task, required input, output format, …
+2. 請盡量利用 agentchat 既有的 component，不要另外創造相似的東西
+3. 對於不同類型的 step，需要不同的 assistant
+4. 每個 message 需要被即時保存，Step 可以隨時被中斷、恢復
+5. 在純用戶的 step ，要怎樣實現？
+6. 純 function step 要用 tool agent
+7. 若需要 user approve，要怎樣做？
+
+
+1. 
+
+
+
+針對 Step 寫一個 abstract code，用於示範你要怎樣設計這個系統
+
+
+
+
+
+請先分析並回答我的問題，然後修改code
+
+1. 有需要 StepManager、TaskManager 嗎？為什麼不直接整合在 Step、Task class？
+2. 在示範的 code 需要使用 agentchat，盡量利用 agentchat 既有的 component，不要另外創造相似的東西，例如 AgentConfig
+
+1. 先不考慮 Storage
+2. context: Dict[str, any] -> 不要有模糊的 data type，這裡的 context 具體是什麼？
+3. context.get("model_client") -> 直接使用 OpenAIChatCompletionClient
+4. _execute_function -> 改成 用 Tool Agent 
+5. 
+6. 
+7. 
+
+
+
+
+請基於 agent-workflow-design 的「討論」章節，檢視修改agent-workflow-design_1
+
+* 這個 design 是面向給開發者，目的是希望讓他們了解整個系統，所以請加強說明，不要太過精簡，保留原先「討論」時的思考脈絡、為什麼這樣設計等等
+
+
+
+
+
+
+
+請先將 agent flow design 中 「討論」整理成一篇清晰、完整的說明文件，然後重新編寫  Agent workflow
+1. 請寫中文
+2. 說明文件以文章的方式呈現，要有完整的脈絡邏輯，不要用 bullet points 方式精簡
+
+請參考 agent flow design，逐一分析「討論」中的每個主題，每次依序對一個主題做分析。
+
+1. 請先重述這個主題的觀點，請分析後給予反饋意見
+2. 你的分析重點是就我所提出的設計是否認同，請先思考分析，然後給予是否同意，若不同意的話請給你的方案
+3. 這是一個 MVP app，我們當前的重點不是去想各種需求、各種功能，而是專注在那些必要的「核心功能」，然後盡量把核心功能想完整。所以請不要提出一些不必要的、額外的功能建議。
+4. 你的分析要盡量以文章的方式呈現，要有分析及思考過程、脈絡邏輯，不要用 bullet points 方式精簡回答
+5. 分析的重點是在 app 的核心概念設計，不是 coding，不要寫 code。
+6. 請從「Replan（結論：replan 等同於 new task）」這個主題開始逐一分析，前面的主題已經分析過了，不用再分析。
+
+
+
+就「討論」中的每個點
+
+1. 先重申這個點（不要簡化，要完整重申）
+2. 然後針對這個點給予你的反饋、想法、回答（有些是提問）
+3. 請充分思考、力求完整
+
+
+
+
+
+
+
 請參考 agent-workflow-design_1，讓我們專注在開發 step executor，不用管其他 component
 * 請用 pydantic 定義 data types，data types 要明確，不要有模糊的定義
 * 請盡量參考並利用 pydantic ai 既有的 component, code，不要重複造輪子

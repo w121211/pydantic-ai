@@ -1,0 +1,677 @@
+
+
+Please rewrite the onStartSubtaskCommand method followed by:
+
+/**
+     * Steps
+     * - Get the task item from the store. If not found, raise error
+     * - Get the subtask item from the task item.
+     * - Check is this subtask is prepared by
+     *   - Need to have the input. If not, try to get it from the previous subtask's output.
+     * - Check is the task currently running?
+     *   - If yes, then check which subtask is running.
+     *     - If the running subtask is this. Do nothing. Log a warnning message.
+     *     - If the running subtask is not this. Pause the running subtask first.
+     * - Check is the subtask folder is existed, if not, create one.
+     *   - If is existed. Do nothing.
+     * - emit 'StartNewChatCommand' -> This will trigger the proceeded process. No need to wait.
+     * - emit 'SubtaskStarted'
+     */
+
+
+
+請重寫TaskService class
+
+- 分成兩塊，一塊是 handlers，一塊是 helpers
+例如
+```
+async handleCreateTask() {
+  task = await createTask();
+  this.tasks[task.id] = task
+
+
+  // Create task folder
+  task = await createTaskFolder();
+  eventBus.publish(“TaskCreated”)  
+
+  eventBus.publish(“TaskCreated”)
+
+
+}
+
+private async createTask() {
+   …
+}
+
+
+```
+- 不用給其他的 code
+
+
+請依事件流重寫TaskService
+- 定義 Task type 作為 data model
+- TaskService 會 handle CreateTaskCommand、StartTaskCommand等，可參考handleStartSubtask
+- TaskService 有一個 tasks: Map<string, Task>
+- 不用給前面的 code
+
+
+請參考`design-events.md`的事件流，用 typescript 寫一個基本的 event systen
+- 假定 event bus 已經有了，只需要定義 interface
+- 需要考慮 async event handlers & sync event handlers
+
+
+請參考`design-events.md`的事件流，用 python 寫一個基本的 event systen
+
+- 使用 pydantic model 定義 data type，例如 Task, Subtask, Chat, etc
+- 用 service class handle events，例如 TaskService
+- Event 定義的參考
+
+```
+from pydantic import TypeAdapter
+
+class EventType(str, Enum):
+    pass
+
+class BaseEventData(BaseModel):
+    event_type: str  # Discriminator field
+
+class TaskCreateEventData(BaseEventData):
+    event_type: Literal["task_create"]
+    path: Path
+
+class TaskUpdateEventData(BaseEventData):
+    event_type: Literal["task_update"]
+    status: TaskStatus
+
+class Event(BaseModel):
+    type: EventType
+    data: BaseEventData
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+    @field_validator('data')
+    def validate_event_data(cls, v):
+        if type(v) == BaseEventData:
+            raise ValueError("Cannot use BaseEventData directly")
+        return v
+
+# Create a type adapter for validation
+event_data_adapter = TypeAdapter(BaseEventData)
+
+
+# Creating events
+task_create = Event(
+    type=EventType.TASK_CREATE,
+    data=TaskCreateEventData(
+        event_type="task_create",
+        path=Path("/some/path")
+    )
+)
+
+# Validation
+try:
+    # This will fail
+    Event(
+        type=EventType.TASK_CREATE,
+        data=BaseEventData(event_type="invalid")
+    )
+except ValueError:
+    print("Cannot use BaseEventData directly")
+
+# Parsing JSON
+json_data = '{"event_type": "task_create", "path": "/some/path"}'
+parsed_data = event_data_adapter.validate_json(json_data)
+``
+
+- 一個 abstract class 的 event bus，要考慮 sync, async handlers
+
+
+
+
+
+
+
+用 typescript 寫一個基本的 event driven 系統
+
+
+
+
+請先重複我的問題，思考問題後給予回答，純討論，不用寫 code
+
+- Event type 應該要用 enum 來明確定義每個 event 嗎？
+- 每個 event 應該要明確定義 type 嗎？ Why or why not？
+- 
+
+
+Given the events design, please use typescript to implement a basic event driven system.
+- Event bus is given, no need to implement.
+- Focus on services, like task service, subtask service, etc. 
+
+
+請參考 event 設計，用 typescript 寫一個基本的 event driven 系統
+- 已經有 eventbus 不需要另外寫
+- 專注在 task service, subtask service, …
+
+
+
+
+
+
+在一個 event driven 系統中事件流設計如下
+7. 重新執行 Subtask 流程：
+```
+UserRestartSubtaskCommand
+  (Task service)
+  → SubtaskPauseCommand
+    (Subtask service)
+    → SubtaskPaused
+  → CurrentSubtaskPaused
+  → SubtaskReset
+  → StartSubtaskCommand
+```
+
+1. 請分析這個設計
+2. SubtaskReset 為什麼不用過去式？
+請分析討論，不要寫 code
+
+
+
+
+
+在一個 event driven 系統中事件流設計如下
+Subtask 完成審批流程：
+```
+UserApproveSubtaskCommand
+  → SubtaskOutputGenerated
+  → SubtaskCompleted
+  → NextSubtaskTriggered
+    → StartSubtaskCommand (觸發下一個 subtask 的流程)
+```
+  → NextSubtaskTriggered
+    → StartSubtaskCommand (觸發下一個 subtask 的流程)
+1. 這兩個有什麼不同嗎?
+2. NextSubtaskTriggered 還是 NextSubtastRequested 比較適合?
+
+
+
+
+我想要用 event driven pattern 實現一個解耦的系統
+
+- 系統有 task, subtask, chat，一個 task 有多個 subtasks，一個 subtask 有多個 chats
+- 用戶可以創新 task
+- 當開始執行 subtask，會開一個新 chat
+- chat 是 agent 與 user 的對話
+- 只有 user approve agent 的成果後，subtask 才算完成並輸出
+- user 可以不同意 agent 的成果，透過 submit chat message 持續叫 agent 修改
+- user 也可以開新的 chat
+- 當 chat 輸出成果，這個 subtask 才算執行完成並輸出結果，task 會用此輸出作為next subtask的輸入並執行 
+- user 可以指定 subtask 重新執行，若 task 正在執行，則會先暫停當前的 subtask ，然後重新執行 subtask
+- user 可以暫停 task
+- 每個 chat message 會被即時儲存至對應的 chat file 中
+- task 是以檔案形式存放在 local 端，UI 會有一個 path navigator
+```
+- task_21-hello_world
+  - works
+    - remote_direcoty_1
+      - ...
+    - remote_direcoty_2
+  - subtask_0-Planning
+    - subtask_0_1-Planning
+      - output-work_plan_20241010
+      - subtask.lock
+    - subtask_0_2-Planning
+  - subtask_1-a_sample_step
+    - chat_20241023_xxxx.txt
+    - chat_20241023_0921.txt
+    - work-goodbye_world_20241023_0921.py
+    - work-hello_world_20241023_0921.py
+    - work-hello_world_20241023_0928.py
+  - subtask_2-...
+    - ...
+  - subtask_3-...
+    - ...
+  - subtask_4-... # 只有已經執行到的 step 會創建 folder，尚未執行到的step沒有folder
+  - task.lock  # task 以此為準，刪掉會嘗試從 step_0/output 重新創建
+
+- task_20-hello_world
+  - ...
+- ...
+```
+- UI有 workspace navigator，直接與用戶的本機 folder 連動
+    - 當 folder 更新時，navigator 會隨之更新
+- 用戶在 navigator 點 chat file 時，會載入＆開啟 chat
+
+
+請按照以下格式設計事件流，只要事件流，不用寫具體的 code
+
+事件流輸出格式：
+```
+A
+  → B
+  → C
+```
+
+
+
+TaskCreated→ TaskStarted→ SubtaskRequested→ SubtaskExecutionStarted→ ChatStarted→ AgentRepliesChatMessage→ UserApprovesChatMessage→ SubtaskCompleted→ TaskOutputsSubtaskResult→ NextSubtaskExecutionStarted
+
+
+(若 User 不同意成果)→ ChatContinuesModification→ AgentRepliesChatMessage→ (再度決定 Approve / 不同意)
+
+
+(若 User 開新 Chat)→ ChatStarted→ AgentRepliesChatMessage→ (同上流程)
+
+
+(若 User 要重新執行 Subtask)→ CurrentSubtaskPaused→ SubtaskExecutionRestarted→ ChatStarted
+
+
+(若 User 暫停 Task)→ TaskPaused
+
+
+
+
+
+請思考並回答以下問題，不需要給 code ，僅討論怎樣設計:
+
+當 user 指定某個 subtask 重新執行，事件流該如何設計？（我想了兩種方案）
+
+1.
+on  COMMAND_RESTART_SUBTASK {
+
+  if (task is in progress)
+    await Task.puase()
+    
+  prepare_subtask()
+  emit SUBTASK_READY_TO_RUN
+}
+
+
+2. 
+on COMMAND_RESTART_SUBTASK {
+
+  if (task is in progress)  
+    await Task.puase()
+    return
+	
+  prepare_subtask()
+  emit SUBTASK_READY_TO_RUN   
+}
+
+on TASK_PAUSED {
+  ???
+}
+
+
+
+
+
+
+
+
+事件流設計
+
+User COMMAND_CREATE_TASK
+  → TASK_CREATED
+  → NEXT_SUBTASK_READY
+
+NEXT_SUBTASK_READY
+  → SUBTASK_STARTED
+  → CREATE_CHAT
+  → CHAT_CREATED
+  → AGENT_MESSAGE
+  → USER_MESSAGE
+  → CHAT_OUTPUT_SUBMITTED
+  → USER_APPROVED | USER_REJECTED
+  → SUBTASK_COMPLETED (只有在 approved 時)
+
+SUBTASK_COMPLETED
+  → NEXT_SUBTASK_READY | TASK_COMPLETED
+
+
+User COMMAND_RESTART_SUBTASK
+  → (若task正在執行，先暫停) TASK_PAUSED 
+  → 有辦法在 TASK_PAUSED 完成後，繼續 call COMMAND_START_SUBTASK?
+  → SUBTASK_START_READY (NEXT_SUBTASK_READY)
+
+  
+請檢視事件流設計，說明你會怎樣設計？不需要給 code ，僅討論怎樣設計
+
+請思考並回答以下問題，不需要給 code ，僅討論怎樣設計:
+
+
+1. TASK_RUN_INTERUPTED: 建議其他的命名?
+
+2. SUBTASK_START_READY vs NEXT_SUBTASK_READY? or other names?
+
+3. User COMMAND_CREATE_TASK
+  → TASK_CREATED
+  → SUBTASK_READY  (改成 COMMAND_START_SUBTASK 會比較好嗎?)
+
+
+
+
+Client 發出 CREATE_TASK command
+  → TaskFactory 建立 task
+  → TASK_CREATED (payload: task metadata, 如 task type)
+
+
+
+
+
+
+  
+
+SUBTASK_COMPLETED (由 ChatService 發出，當 user approved chat output)
+  → SubtaskService 處理：
+     - 儲存 subtask output
+     - 更新 subtask 狀態
+     發出 SUBTASK_OUTPUT_PRODUCED (payload 包含 output)
+  
+  → TaskService 處理 SUBTASK_OUTPUT_PRODUCED：
+     - 更新 task progress
+     - 檢查是否有下一個 subtask
+     如果有下一個 subtask：
+       發出 NEXT_SUBTASK_READY (payload 包含 nextSubtaskId 和 input data)
+     如果沒有下一個 subtask：
+       發出 TASK_COMPLETED
+       
+  → SubtaskService 處理 NEXT_SUBTASK_READY：
+     - 取得 next subtask
+     - 設定 input data
+     發出 SUBTASK_STARTED
+
+
+
+我想要利用 event driven pattern 實現一個解耦的系統
+
+- 系統有 task, subtask, chat，一個 task 有多個 subtasks，一個 subtask 有多個 chats
+- 當開始執行 subtask，會開一個新 chat
+- chat 是 agent 與 user 的對話
+- 只有 user approve agent 的成果後，subtask 才算完成並輸出
+- user 可以不同意 agent 的成果，透過 submit chat message 持續叫 agent 修改
+- user 也可以開新的 chat
+- 當 chat 輸出成果，這個 subtask 才算執行完成並輸出結果，task 會用此輸出作為next subtask的輸入並執行 
+- user 可以指定 subtask 重新執行
+
+請參考`event-driven-system.ts`，請思考並回答以下問題，不需要給 code ，僅討論怎樣設計:
+
+1.
+>      await this.executeSubtask(subtask);
+
+因為跑 subtask 實際上就是跑 chat，且 chat 會有各種情況(中斷、開新chat、...)，這樣寫合適嗎?
+
+
+
+
+
+
+
+
+
+我想要實現一個解耦的系統，要如何利用 event driven pattern 來設計？
+
+- 系統有 task, subtask, chat，一個 task 有多個 subtasks，一個 subtask 有多個 chats
+- 在 subtask 完成時，會自動執行下一個 subtask，我想到幾種作法：
+
+```
+1. 建立一個 CmdRunSubtask event
+
+TaskService.onSubtaskUpdated(updatedSubtask) {
+  task update;
+  emit TaskUpdated;
+  emit CmdRunSubtask;
+}
+
+SubtaskService.onCmdRunSubtask(subtaskId, inputData, ...) {
+  subtask = getSubtask(subtaskId)
+  subtask.run(inputData)
+}
+
+2. 透過 taskUpdated trigger
+
+TaskService.onSubtaskUpdated(updatedSubtask) {
+  task update;
+  emit TaskUpdated;
+}
+
+SubtaskService.onTaskUpdate(updatedTask, ...) {
+  subtask, inputData = getNextExecutableSubtask(updatedTask)
+  subtask.run(inputData)
+}
+
+```
+
+
+1. 我的寫法對嗎?請幫忙修正
+2. 除此之外實務上還有哪些常見做法，請思考、比較，選出你覺得比較適合的
+3. 我希望是設計清晰易懂，適合MVP階段
+
+
+* 我應該要設計成
+
+
+
+* user 會發送 chat message，agent 會發送回覆的訊息。user -> agent -> user -> ...
+* user 可以創新 chat，
+
+
+- subtask 可以被暫停
+- 
+
+
+
+* user 可以使用上、下方向鍵任意中
+
+
+
+* user 操作：
+  * 開啟 chat
+
+
+* chat 會有 get, 
+
+
+subtask
+  start
+  restart
+  
+chat
+
+
+
+
+如果我想要實現一個解耦的系統，要如何利用 event driven pattern 來設計？
+
+* 系統有 task, subtask, chat，一個 task 有多個 subtasks，一個 subtask 有多個 chats
+* 當 subtask 開始，會執行一個新 chat
+* chat 是 agent 與 user 的對話
+* user 可以開啟新 chat
+* 只有 user approve agent 的成果後，subtask 才算完成並輸出
+* 當 chat 輸出成果，這個 subtask 會完成並輸出結果，task 會用此輸出作為next subtask的輸入並執行 
+
+
+
+
+
+我在設計一個event driven系統，
+假設 event 分為 observation 與 action，例如 task started vs start task，我應該如何命名 event？ 
+請推薦幾組常見的命名方法?
+
+
+
+
+
+
+我在設計一個event driven系統，
+現在，假設有 task, subtask，task 中包含多個 subtasks
+
+在 task.run() 裡，我應該要怎麼做？
+1. self.subtask[0].run()
+2. event_stream.publish("RUN SUBTASK", {subtask_id: ...})
+
+請討論、建議各種做法(不限於以上)並比較
+
+
+
+
+
+
+
+
+創建新任務流程：
+```
+UserCreateTaskCommand
+  → TaskCreated
+  → TaskFolderCreated
+  → TaskInitialized
+  → StartTaskCommand (自動執行 task)
+```
+
+執行 Task 流程，包含 resume：
+```
+StartTaskCommand
+  → TaskLoaded （讀取 task folder）
+  → TaskInitialized（還是 task resumed？）
+  → StartSubtaskCommand
+```
+
+執行 Subtask 流程：
+```
+StartSubtaskCommand
+
+  (Subtask service)
+  (如果尚未執行過 subtask，沒有subtask folder)
+  → SubtaskInitialized
+  → SubtaskFolderCreated
+
+  (如果有 subtask folder)
+  → SubtaskFolderLoaded
+  → SubtaskInitialized
+
+  → CreateChatCommand
+```
+
+Chat 對話流程：
+```
+UserSubmitMessageCommand
+  → MessageReceived
+  → MessageSavedToFile
+  → ChatUpdated
+  → AgentProcessedMessage
+  → AgentResponseGenerated
+  → MessageSavedToFile
+  → ChatUpdated
+```
+
+Subtask 完成流程（需審批）：
+```
+UserSubmitMessageCommand
+  → MessageReceived
+  → MessageSavedToFile
+  → ChatUpdated
+  → UserApproveSubtaskCommand（ approve 放在 user message 當中）
+
+UserApproveSubtaskCommand
+  → FinishSubtaskCommand
+
+FinishSubtaskCommand
+  → SubtaskOutputGenerated
+  → UserApproveSubtaskCommand
+  (Subtask service)
+  → SubtaskCompleted
+  → NextSubtaskTriggered
+
+    （task service: 取得 next subtask, emit StartSubtaskCommand）
+    → StartSubtaskCommand (觸發下一個 subtask 的流程)
+```
+- NextSubtaskTriggered vs NextSubtaskRequested
+    - 如果下一個子任務是自動觸發且必定執行的，使用Triggered更合適 -> 確定的、自動的狀態轉換
+    - 如果存在條件判斷或可能被拒絕的情況，使用Requested更合適 -> 請求或意圖
+- 如果 User 拒絕 agent 結果，就直接送需要修改什麼的訊息（不批准），延續 chat
+
+
+Subtask 完成流程（無需審批）：
+```
+SubtaskOutputGenerated
+→ SubtaskCompleted
+→ NextSubtaskTriggered
+    → StartSubtaskCommand 
+```
+
+
+
+6. 開新 Chat 流程：
+```
+UserCreateChatCommand
+  → CreateChatCommand
+
+CreateChatCommand
+  → ChatFileCreated
+  → ChatCreated (包含 initialize 等）
+  → AgentInitialized （依照 subtask 的設定）
+  → FirstPromptInitialized（依照 subtask 的設定（包含 input）自動產生第一個 prompt）
+  → SubmitPromptCommand (或是 PromptMessageReceived)
+    → MessageSavedToFile
+    → ChatUpdated
+    → AgentProcessedMessage
+    → AgentResponseGenerated
+    → MessageSavedToFile
+    → ChatUpdated
+```
+
+7. 重新執行 Subtask 流程：
+```
+UserRestartSubtaskCommand
+  (Task service)
+  → PauseSubtaskCommand （如果當前執行的 subtask 非 restart subtast，先停止）
+    (Subtask service)
+    → SubtaskStateSaved
+    → SubtaskPaused
+  → StartSubtaskCommand
+```
+- 重新執行 subtask 在業務邏輯中會創新 chat & run，不會更動已經執行的結果
+
+8. 暫停任務流程：
+```
+UserPauseTaskCommand
+  → TaskStateUpdated
+  → TaskStateSaved
+  → TaskPaused
+```
+
+9. 恢復任務流程：
+```
+ResumeTaskCommand
+
+  → TaskPaused
+  → TaskStateSaved
+```
+
+9. 檔案系統同步流程：
+```
+FileSystemChanged
+  → WorkspaceUpdated
+  → UINavigatorUpdated
+```
+
+10. 載入 Chat 紀錄流程：
+```
+UserSelectChatFileCommand
+  → LoadChatCommand
+  → ChatFileLoaded
+  → ChatIntialized
+```
+
+
+11. Task 狀態恢復流程：
+```
+TaskLockDeleted
+  → LastOutputLoaded
+  → TaskStateRestored
+  → StartSubtaskCommand
+```
+
+主要改動:
+1. 移除所有事件名稱中的 "Event" 後綴
+2. 使用過去式來表達已發生的事件
+3. 保持 Command 結尾在命令名稱中
+4. 統一命名風格使其更簡潔且語意清晰
