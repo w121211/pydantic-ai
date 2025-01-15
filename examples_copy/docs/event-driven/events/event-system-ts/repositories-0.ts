@@ -1,13 +1,13 @@
 import { Task, Chat } from "./types";
 
-interface IStore<T> {
+interface IRepository<T> {
   get(id: string): T | undefined;
   add(item: T): void;
   update(id: string, update: Partial<T>): void;
   delete(id: string): void;
 }
 
-class BaseStore<T extends { id: string }> implements IStore<T> {
+class BaseRepository<T extends { id: string }> implements IRepository<T> {
   protected items: Map<string, T> = new Map();
 
   get(id: string): T | undefined {
@@ -30,9 +30,6 @@ class BaseStore<T extends { id: string }> implements IStore<T> {
   }
 }
 
-export class TaskStore extends BaseStore<Task> {}
+export class TaskRepository extends BaseRepository<Task> {}
 
-export class ChatStore extends BaseStore<Chat> {}
-
-// No need. All the subtasks are stored in the `task.subtasks`
-// export class SubtaskStore extends BaseStore<Subtask> {}
+export class ChatRepository extends BaseRepository<Chat> {}
