@@ -1,13 +1,4 @@
-export interface BaseEvent {
-  type: string;
-  timestamp: number;
-  correlationId: string;
-}
-
-export interface BaseCommand {
-  type: string;
-  timestamp: number;
-}
+import { BaseCommand, BaseEvent } from "./types";
 
 // Event Bus Interface
 export interface IEventBus {

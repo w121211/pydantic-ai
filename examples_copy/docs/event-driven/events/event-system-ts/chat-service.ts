@@ -1,78 +1,8 @@
-import { BaseEvent, IEventBus } from "./event-system-0";
+import { IEventBus } from "./event-system-0";
 import { ChatStore } from "./stores-0";
 import { Chat, Message } from "./types";
 import { promises as fs } from "fs";
 import * as path from "path";
-
-// Chat Events
-interface ChatCreatedEvent extends BaseEvent {
-  type: "ChatCreated";
-  taskId: string;
-  subtaskId: string;
-  chatId: string;
-}
-
-interface ChatFileCreatedEvent extends BaseEvent {
-  type: "ChatFileCreated";
-  taskId: string;
-  subtaskId: string;
-  chatId: string;
-  filePath: string;
-}
-
-interface MessageReceivedEvent extends BaseEvent {
-  type: "MessageReceived";
-  chatId: string;
-  message: Message;
-}
-
-interface MessageSavedToChatFileEvent extends BaseEvent {
-  type: "MessageSavedToChatFileEvent";
-  chatId: string;
-  messageId: string;
-  filePath: string;
-}
-
-interface ChatUpdatedEvent extends BaseEvent {
-  type: "ChatUpdated";
-  chatId: string;
-  lastMessageId: string;
-}
-
-interface AgentProcessedMessageEvent extends BaseEvent {
-  type: "AgentProcessedMessage";
-  chatId: string;
-  messageId: string;
-}
-
-interface AgentResponseGeneratedEvent extends BaseEvent {
-  type: "AgentResponseGenerated";
-  chatId: string;
-  response: Message;
-}
-
-// Commands
-interface StartNewChatCommand extends BaseEvent {
-  type: "StartNewChatCommand";
-  taskId: string;
-  subtaskId: string;
-  metadata?: {
-    title?: string;
-    tags?: string[];
-  };
-}
-
-interface UserSubmitMessageCommand extends BaseEvent {
-  type: "UserSubmitMessageCommand";
-  chatId: string;
-  content: string;
-}
-
-interface SubmitInitialPromptCommand extends BaseEvent {
-  type: "SubmitInitialPromptCommand";
-  chatId: string;
-  prompt: string;
-}
 
 class ChatService {
   private workspace: string = "tasks";

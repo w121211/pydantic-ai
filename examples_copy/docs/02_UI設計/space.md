@@ -5,19 +5,21 @@
 ### 資料夾結構
 
 基本架構：
+
 - task_21-hello_world
   - works
     - remote_direcoty_1
       - ...
     - remote_direcoty_2
-  - step0_planning 
+  - step0_planning
     - step01_planning
-      - output-work_plan_20241010.txt
+      - output.txt # 永遠是最新的輸出
+      - output_history/ # 歷史紀錄資料夾
     - step02_an_example_of_sub_step
   - step1_a_sample_step
-    - output.json                  # 永遠是最新的輸出
-    - output_history/              # 歷史紀錄資料夾
-      - output_20240113_153000.json     # 使用易讀的時間格式
+    - output.txt # 永遠是最新的輸出
+    - output_history/ # 歷史紀錄資料夾
+      - output_20240113_153000.txt # 使用易讀的時間格式
     - chat_20241023_xxxx.txt
     - chat_20241023_0921.txt
     - work-goodbye_world_20241023_0921.py
@@ -27,31 +29,30 @@
     - ...
   - step_3-...
     - ...
-  - step_4-... # 只有已經執行到的 step 會創建 folder，尚未執行到的step沒有folder
-  - task.lock  # task 以此為準，刪掉會嘗試從 step_0/output 重新創建
+  - step_4-... # 只有已經執行到的 step 會創建 folder，尚未執行到的 step 沒有 folder
+  - task.lock # task 以此為準，刪掉會嘗試從 step_0/output 重新創建
 - task_20-hello_world
   - ...
 - ...
-- (一個問題是當累積太多時，UI可能會需要隱藏部分 tasks，例如只展示當前在進行的)
-
+- (一個問題是當累積太多時，UI 可能會需要隱藏部分 tasks，例如只展示當前在進行的)
 
 命名方案，待決定：
-- step0_collect_opinions_from_sites     # 方案1
-- step0_collect_opinions_from_sites     # 方案1
-- step0_collect_opinions_from_sites     # 方案1
 
-- step_0-Collect_opinions_from_sites    # 方案2
-- step0_collect_opinions_from_sites     # 方案1
-- step0_collect_opinions_from_sites     # 方案1
+- step0_collect_opinions_from_sites # 方案 1
+- step0_collect_opinions_from_sites # 方案 1
+- step0_collect_opinions_from_sites # 方案 1
 
-- step0_收集網上意見
-- step1_AI助手挑選討論串
-- step3_AI助手撰寫討論串回應
+- step_0-Collect_opinions_from_sites # 方案 2
+- step0_collect_opinions_from_sites # 方案 1
+- step0_collect_opinions_from_sites # 方案 1
+
+- step0\_收集網上意見
+- step1_AI 助手挑選討論串
+- step3_AI 助手撰寫討論串回應
 
 - step_0-收集網上意見
-- step_1-AI助手挑選討論串
-- step_2-AI助手撰寫討論串回應
-
+- step_1-AI 助手挑選討論串
+- step_2-AI 助手撰寫討論串回應
 
 ### Subtask (step) folder
 
